@@ -148,16 +148,22 @@
           </div>
           <div class="col-12 col-md-7">
             <!-- Category Filter Pills -->
-            <div class="d-flex gap-1.5 overflow-x-auto pb-1 align-items-center">
-              <button class="btn btn-sm btn-warning rounded-pill px-2.5 py-0.5 active fw-bold admin-cat-pill text-dark shadow-sm" data-cat="all" data-cat-name="Menu Hotu" onclick="filterAdminMenuByCategory('all', this)">
-                Totál ({{ menu_items|length }})
-              </button>
-              {% for cat in categories %}
-                <button class="btn btn-sm btn-outline-light rounded-pill px-2.5 py-0.5 admin-cat-pill text-white-50" data-cat="{{ cat.id }}" data-cat-name="{{ cat.name|escape }}" onclick="filterAdminMenuByCategory('{{ cat.id }}', this)">
-                  <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} me-1 small"></i>{{ cat.name }}
-                  <span class="badge bg-black bg-opacity-40 rounded-pill ms-1 text-white-50" style="font-size:0.7rem;">{{ cat.item_count|default:cat.items.count }}</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-white-50 small fw-bold text-nowrap d-none d-sm-inline-flex align-items-center gap-1">
+                <i class="fa-solid fa-filter text-warning small"></i>
+                <span>Filtra tuir Kategoria:</span>
+              </span>
+              <div class="d-flex gap-1.5 overflow-x-auto pb-1 align-items-center flex-nowrap" style="scrollbar-width: thin;">
+                <button class="btn btn-sm btn-warning rounded-pill px-2.5 py-0.5 active fw-bold admin-cat-pill text-dark shadow-sm" data-cat="all" data-cat-name="Menu Hotu" onclick="filterAdminMenuByCategory('all', this)">
+                  Totál ({{ menu_items|length }})
                 </button>
-              {% endfor %}
+                {% for cat in categories %}
+                  <button class="btn btn-sm btn-outline-light rounded-pill px-2.5 py-0.5 admin-cat-pill text-white-50" data-cat="{{ cat.id }}" data-cat-name="{{ cat.name|escape }}" onclick="filterAdminMenuByCategory('{{ cat.id }}', this)">
+                    <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} me-1 small"></i>{{ cat.name }}
+                    <span class="badge bg-black bg-opacity-40 rounded-pill ms-1 text-white-50" style="font-size:0.7rem;">{{ cat.item_count|default:cat.items.count }}</span>
+                  </button>
+                {% endfor %}
+              </div>
             </div>
           </div>
         </div>
@@ -165,8 +171,8 @@
         <!-- Active Category Indicator Bar (dynamically visible when a category is selected) -->
         <div id="active-cat-indicator-bar" class="p-2.5 px-3 mb-3 rounded-3 bg-dark bg-opacity-75 border border-warning border-opacity-35 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm" style="display: none !important;">
           <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark fw-bold rounded-pill px-2.5 py-1">
-              <i class="fa-solid fa-layer-group me-1"></i>Kategoria Hili
+            <span class="badge bg-warning text-dark fw-bold rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1">
+              <i class="fa-solid fa-filter"></i> <span>Filtra iha Lista Menu:</span>
             </span>
             <strong class="text-white fs-6" id="active-cat-name-display">-</strong>
             <span class="badge bg-white bg-opacity-15 text-white rounded-pill px-2.5 py-0.5 small" id="active-cat-count-display">0 Itens</span>
@@ -220,9 +226,10 @@
                     </div>
                   </td>
                   <td>
-                    <span class="badge bg-dark border border-secondary border-opacity-50 text-white-50 px-2 py-1 rounded-pill">
-                      <i class="fa-solid fa-{{ item.category.icon_name|default:'utensils' }} text-warning me-1 small"></i>{{ item.category.name }}
-                    </span>
+                    <button type="button" class="badge bg-dark border border-secondary border-opacity-50 text-white-50 px-2.5 py-1 rounded-pill btn btn-sm p-1 text-decoration-none d-inline-flex align-items-center gap-1" onclick="filterAdminMenuByCategory('{{ item.category_id }}')" title="Filtra menu tuir kategoria {{ item.category.name }}">
+                      <i class="fa-solid fa-{{ item.category.icon_name|default:'utensils' }} text-warning small"></i>
+                      <span>{{ item.category.name }}</span>
+                    </button>
                   </td>
                   <td>
                     <span class="fw-bold text-warning fs-6">${{ item.price }}</span>
@@ -340,7 +347,7 @@
                 <th class="text-center">Ordem</th>
                 <th class="text-center">Totál Menu</th>
                 <th class="text-center">Status</th>
-                <th class="text-end" style="min-width: 140px;" data-i18n="actions">Asaun</th>
+                <th class="text-end" style="min-width: 280px;" data-i18n="actions">Asaun</th>
               </tr>
             </thead>
             <tbody>
@@ -385,15 +392,16 @@
                     {% endif %}
                   </td>
                   <td class="text-end">
-                    <div class="d-inline-flex gap-1.5 align-items-center">
+                    <div class="d-inline-flex gap-1.5 align-items-center flex-wrap justify-content-end">
+                      <!-- Prominent "Filtra iha Lista Menu" button -->
+                      <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm" onclick="goToCategoryInMenuPanel('{{ cat.id }}')" title="Filtra menu hosi kategoria {{ cat.name }} iha tab Lista Menu">
+                        <i class="fa-solid fa-filter text-info small"></i>
+                        <span>Filtra iha Lista Menu</span>
+                      </button>
+
                       <!-- Quick Add Menu to this category -->
                       <button class="btn btn-sm btn-outline-success rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openCreateMenuItemModal('{{ cat.id }}')" title="Aumenta Menu ba Kategoria ne'e">
                         <i class="fa-solid fa-plus small"></i>
-                      </button>
-
-                      <!-- Filter in Menu Panel -->
-                      <button class="btn btn-sm btn-outline-info rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="goToCategoryInMenuPanel('{{ cat.id }}')" title="Hare iha Lista Menu &amp; Stok">
-                        <i class="fa-solid fa-arrow-up-right-from-square small"></i>
                       </button>
 
                       <!-- Edit Category Button -->
@@ -429,8 +437,8 @@
                           <button class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="openCreateMenuItemModal('{{ cat.id }}')">
                             <i class="fa-solid fa-plus-circle"></i> <span>Aumenta Menu ba Kategoria Ne'e</span>
                           </button>
-                          <button class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1" onclick="goToCategoryInMenuPanel('{{ cat.id }}')">
-                            <i class="fa-solid fa-arrow-up-right-from-square small"></i> <span>Filtra iha Lista Menu</span>
+                          <button class="btn btn-sm btn-info text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1.5" onclick="goToCategoryInMenuPanel('{{ cat.id }}')">
+                            <i class="fa-solid fa-filter small"></i> <span>Filtra iha Lista Menu</span>
                           </button>
                         </div>
                       </div>
@@ -1081,20 +1089,36 @@
   }
 
   function goToCategoryInMenuPanel(catId) {
-    // Switch dock tab to #menu-panel
+    // 1. Activate dock item
+    const dockButtons = document.querySelectorAll('.dock-item-btn[data-dock-tab]');
+    dockButtons.forEach(b => b.classList.remove('active'));
     const menuTabBtn = document.querySelector('.dock-item-btn[data-dock-tab="#menu-panel"]');
-    if (menuTabBtn) {
-      menuTabBtn.click();
-    } else {
-      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('show', 'active'));
-      document.getElementById('menu-panel')?.classList.add('show', 'active');
+    if (menuTabBtn) menuTabBtn.classList.add('active');
+
+    // 2. Activate tab pane directly
+    document.querySelectorAll('#adminTabContent .tab-pane').forEach(p => p.classList.remove('show', 'active'));
+    const menuPane = document.getElementById('menu-panel');
+    if (menuPane) {
+      menuPane.classList.add('show', 'active');
     }
-    // Select category pill
+
+    // 3. Select category pill & apply filter
     const pill = document.querySelector(`.admin-cat-pill[data-cat="${catId}"]`);
     if (pill) {
       filterAdminMenuByCategory(catId, pill);
-      pill.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      filterAdminMenuByCategory(catId);
     }
+
+    // 4. Scroll smoothly into view
+    setTimeout(() => {
+      const indicator = document.getElementById('active-cat-indicator-bar');
+      if (indicator && indicator.style.display !== 'none') {
+        indicator.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (pill) {
+        pill.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 80);
   }
 
   // --------------------------------------------------------------------------
