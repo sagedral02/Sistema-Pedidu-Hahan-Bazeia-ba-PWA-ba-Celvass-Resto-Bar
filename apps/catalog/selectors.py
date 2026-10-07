@@ -9,7 +9,7 @@ def get_categories(active_only: bool = True) -> List[Category]:
     return qs.order_by('sort_order', 'name')
 
 def get_categories_with_counts(active_only: bool = False):
-    qs = Category.objects.annotate(item_count=Count('items'))
+    qs = Category.objects.annotate(item_count=Count('items')).prefetch_related('items')
     if active_only:
         qs = qs.filter(is_active=True)
     return qs.order_by('sort_order', 'name')

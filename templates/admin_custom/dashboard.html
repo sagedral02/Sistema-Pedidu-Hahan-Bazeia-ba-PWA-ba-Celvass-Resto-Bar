@@ -149,15 +149,35 @@
           <div class="col-12 col-md-7">
             <!-- Category Filter Pills -->
             <div class="d-flex gap-1.5 overflow-x-auto pb-1 align-items-center">
-              <button class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-0.5 active admin-cat-pill" data-cat="all" onclick="filterAdminMenuByCategory('all', this)">
+              <button class="btn btn-sm btn-warning rounded-pill px-2.5 py-0.5 active fw-bold admin-cat-pill text-dark shadow-sm" data-cat="all" data-cat-name="Menu Hotu" onclick="filterAdminMenuByCategory('all', this)">
                 Totál ({{ menu_items|length }})
               </button>
               {% for cat in categories %}
-                <button class="btn btn-sm btn-outline-light rounded-pill px-2.5 py-0.5 admin-cat-pill text-white-50" data-cat="{{ cat.id }}" onclick="filterAdminMenuByCategory('{{ cat.id }}', this)">
+                <button class="btn btn-sm btn-outline-light rounded-pill px-2.5 py-0.5 admin-cat-pill text-white-50" data-cat="{{ cat.id }}" data-cat-name="{{ cat.name|escape }}" onclick="filterAdminMenuByCategory('{{ cat.id }}', this)">
                   <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} me-1 small"></i>{{ cat.name }}
+                  <span class="badge bg-black bg-opacity-40 rounded-pill ms-1 text-white-50" style="font-size:0.7rem;">{{ cat.item_count|default:cat.items.count }}</span>
                 </button>
               {% endfor %}
             </div>
+          </div>
+        </div>
+
+        <!-- Active Category Indicator Bar (dynamically visible when a category is selected) -->
+        <div id="active-cat-indicator-bar" class="p-2.5 px-3 mb-3 rounded-3 bg-dark bg-opacity-75 border border-warning border-opacity-35 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm" style="display: none !important;">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark fw-bold rounded-pill px-2.5 py-1">
+              <i class="fa-solid fa-layer-group me-1"></i>Kategoria Hili
+            </span>
+            <strong class="text-white fs-6" id="active-cat-name-display">-</strong>
+            <span class="badge bg-white bg-opacity-15 text-white rounded-pill px-2.5 py-0.5 small" id="active-cat-count-display">0 Itens</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="openCreateMenuItemModal(currentActiveMenuCat)">
+              <i class="fa-solid fa-plus-circle"></i> <span>Aumenta Menu ba Kategoria Ne'e</span>
+            </button>
+            <button class="btn btn-sm btn-outline-light text-white-50 rounded-pill px-2.5 py-1" onclick="filterAdminMenuByCategory('all')">
+              <i class="fa-solid fa-xmark me-1"></i> Hare Hotu
+            </button>
           </div>
         </div>
 
@@ -347,9 +367,11 @@
                     <span class="badge bg-dark border border-secondary border-opacity-50 text-white px-2 py-1 rounded-pill">{{ cat.sort_order }}</span>
                   </td>
                   <td class="text-center">
-                    <span class="badge bg-primary bg-opacity-20 border border-primary text-primary px-2.5 py-1 rounded-pill fw-bold">
-                      {{ cat.item_count|default:cat.items.count }} Itens
-                    </span>
+                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm" onclick="toggleCategoryMenuAccordion('{{ cat.id }}')" title="Klik atu hare no jere menu iha kategoria ne'e">
+                      <i class="fa-solid fa-bowl-food text-warning"></i>
+                      <span>{{ cat.item_count|default:cat.items.count }} Itens</span>
+                      <i class="fa-solid fa-chevron-down small ms-1" id="cat-chevron-{{ cat.id }}" style="transition: transform 0.25s ease;"></i>
+                    </button>
                   </td>
                   <td class="text-center">
                     {% if cat.is_active %}
@@ -364,6 +386,16 @@
                   </td>
                   <td class="text-end">
                     <div class="d-inline-flex gap-1.5 align-items-center">
+                      <!-- Quick Add Menu to this category -->
+                      <button class="btn btn-sm btn-outline-success rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openCreateMenuItemModal('{{ cat.id }}')" title="Aumenta Menu ba Kategoria ne'e">
+                        <i class="fa-solid fa-plus small"></i>
+                      </button>
+
+                      <!-- Filter in Menu Panel -->
+                      <button class="btn btn-sm btn-outline-info rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="goToCategoryInMenuPanel('{{ cat.id }}')" title="Hare iha Lista Menu &amp; Stok">
+                        <i class="fa-solid fa-arrow-up-right-from-square small"></i>
+                      </button>
+
                       <!-- Edit Category Button -->
                       <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openEditCategoryModal('{{ cat.id }}')" title="Edita Kategoria">
                         <i class="fa-solid fa-pen-to-square small"></i>
@@ -373,6 +405,83 @@
                       <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="confirmDeleteCategory('{{ cat.id }}', '{{ cat.name|escapejs }}', {{ cat.item_count|default:cat.items.count }})" title="Hamos Kategoria">
                         <i class="fa-solid fa-trash-can small"></i>
                       </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Sub-row: Menus Assigned to Category {{ cat.name }} -->
+                <tr id="cat-menu-subrow-{{ cat.id }}" class="cat-menu-subrow" style="display: none;">
+                  <td colspan="7" class="p-0 border-0">
+                    <div class="p-3 my-2 mx-1 rounded-3 bg-black bg-opacity-60 border border-warning border-opacity-30 shadow-lg">
+                      
+                      <!-- Header with Actions -->
+                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-2 border-bottom border-white border-opacity-10">
+                        <div class="d-flex align-items-center gap-2">
+                          <div class="rounded-circle bg-warning bg-opacity-20 text-warning d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;">
+                            <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} small"></i>
+                          </div>
+                          <div>
+                            <strong class="text-white fs-6">Menu sira ne'ebé asigna ba: <span class="text-warning">{{ cat.name }}</span></strong>
+                            <small class="text-white-50 d-block">{{ cat.slug }} &bull; Totál: {{ cat.items.all|length }} menu</small>
+                          </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                          <button class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="openCreateMenuItemModal('{{ cat.id }}')">
+                            <i class="fa-solid fa-plus-circle"></i> <span>Aumenta Menu ba Kategoria Ne'e</span>
+                          </button>
+                          <button class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1" onclick="goToCategoryInMenuPanel('{{ cat.id }}')">
+                            <i class="fa-solid fa-arrow-up-right-from-square small"></i> <span>Filtra iha Lista Menu</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Menu Items Cards inside Category -->
+                      {% if cat.items.all %}
+                        <div class="row g-2">
+                          {% for item in cat.items.all %}
+                            <div class="col-12 col-md-6 col-lg-4">
+                              <div class="p-2.5 rounded-3 bg-dark bg-opacity-80 border border-secondary border-opacity-35 d-flex align-items-center justify-content-between gap-2 shadow-sm h-100">
+                                <div class="d-flex align-items-center gap-2.5 min-w-0">
+                                  <img src="{{ item.display_image }}" alt="{{ item.name }}" class="rounded-2 border border-secondary border-opacity-25 flex-shrink-0" style="width: 44px; height: 44px; object-fit: cover;" onerror="this.src='/static/icons/default-food.png'">
+                                  <div class="min-w-0">
+                                    <strong class="text-white small d-block text-truncate" title="{{ item.name }}">{{ item.name }}</strong>
+                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-0.5">
+                                      <span class="text-warning fw-bold small">${{ item.price }}</span>
+                                      {% if item.availability == 'AVAILABLE' %}
+                                        <span class="badge bg-success bg-opacity-25 border border-success text-success rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">Iha</span>
+                                      {% elif item.availability == 'SOLD_OUT' %}
+                                        <span class="badge bg-danger bg-opacity-25 border border-danger text-danger rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">Hotu</span>
+                                      {% else %}
+                                        <span class="badge bg-secondary bg-opacity-25 border border-secondary text-white-50 rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">La-Ativu</span>
+                                      {% endif %}
+                                      {% if item.sku %}
+                                        <code class="text-white-50 small bg-black px-1 rounded" style="font-size: 0.68rem;">{{ item.sku }}</code>
+                                      {% endif %}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                                  <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; padding: 0;" onclick="openEditMenuItemModal('{{ item.id }}')" title="Edita Menu">
+                                    <i class="fa-solid fa-pen-to-square" style="font-size: 0.75rem;"></i>
+                                  </button>
+                                  <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; padding: 0;" onclick="confirmDeleteMenuItem('{{ item.id }}', '{{ item.name|escapejs }}')" title="Hamos Menu">
+                                    <i class="fa-solid fa-trash-can" style="font-size: 0.75rem;"></i>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          {% endfor %}
+                        </div>
+                      {% else %}
+                        <div class="p-3 text-center text-white-50 rounded-3 border border-dashed border-secondary border-opacity-35 my-1">
+                          <i class="fa-solid fa-bowl-food fa-lg text-warning opacity-50 mb-1 d-block"></i>
+                          <small class="d-block mb-2">Seidauk iha menu ne'ebé asigna ba kategoria <strong>{{ cat.name }}</strong>.</small>
+                          <button class="btn btn-sm btn-outline-warning rounded-pill px-3 py-1 fw-bold" onclick="openCreateMenuItemModal('{{ cat.id }}')">
+                            <i class="fa-solid fa-plus me-1"></i> Aumenta Menu Primeiru ba Kategoria Ne'e
+                          </button>
+                        </div>
+                      {% endif %}
+
                     </div>
                   </td>
                 </tr>
@@ -875,41 +984,135 @@
   // Menu Filtering & Search
   // --------------------------------------------------------------------------
   function filterAdminMenuByCategory(catId, btnEl) {
-    currentActiveMenuCat = catId;
-    document.querySelectorAll('.admin-cat-pill').forEach(b => b.classList.remove('active'));
-    if (btnEl) btnEl.classList.add('active');
+    currentActiveMenuCat = String(catId || 'all').trim();
+    sessionStorage.setItem('celvass_admin_active_cat', currentActiveMenuCat);
+
+    // Update pill buttons state
+    document.querySelectorAll('.admin-cat-pill').forEach(b => {
+      const bCat = String(b.getAttribute('data-cat') || b.dataset.cat || '').trim();
+      if (bCat === currentActiveMenuCat) {
+        b.classList.remove('btn-outline-light', 'text-white-50');
+        b.classList.add('btn-warning', 'text-dark', 'active', 'fw-bold');
+      } else {
+        b.classList.remove('btn-warning', 'text-dark', 'active', 'fw-bold');
+        b.classList.add('btn-outline-light', 'text-white-50');
+      }
+    });
+
+    // Update indicator bar
+    const indicator = document.getElementById('active-cat-indicator-bar');
+    const nameDisplay = document.getElementById('active-cat-name-display');
+
+    if (currentActiveMenuCat !== 'all') {
+      const activeBtn = document.querySelector(`.admin-cat-pill[data-cat="${currentActiveMenuCat}"]`);
+      const catName = activeBtn ? (activeBtn.getAttribute('data-cat-name') || activeBtn.innerText.trim()) : 'Kategoria Hili';
+      if (indicator) indicator.style.setProperty('display', 'flex', 'important');
+      if (nameDisplay) nameDisplay.textContent = catName;
+    } else {
+      if (indicator) indicator.style.setProperty('display', 'none', 'important');
+    }
+
     filterAdminMenuItems();
   }
 
   function filterAdminMenuItems() {
     const query = (document.getElementById('admin-menu-search')?.value || '').toLowerCase().trim();
     const rows = document.querySelectorAll('.admin-menu-row');
+    let visibleCount = 0;
 
     rows.forEach(row => {
-      const rowCatId = row.dataset.catId;
-      const rowName = row.dataset.name || '';
-      const rowSku = row.dataset.sku || '';
-      const rowDesc = row.dataset.desc || '';
+      const rowCatId = String(row.getAttribute('data-cat-id') || row.dataset.catId || '').trim();
+      const rowName = (row.dataset.name || '').toLowerCase();
+      const rowSku = (row.dataset.sku || '').toLowerCase();
+      const rowDesc = (row.dataset.desc || '').toLowerCase();
 
       const matchCat = (currentActiveMenuCat === 'all' || rowCatId === currentActiveMenuCat);
       const matchQuery = (!query || rowName.includes(query) || rowSku.includes(query) || rowDesc.includes(query));
 
       if (matchCat && matchQuery) {
         row.style.display = '';
+        visibleCount++;
       } else {
         row.style.display = 'none';
       }
     });
+
+    // Update active count display
+    const countDisplay = document.getElementById('active-cat-count-display');
+    if (countDisplay) {
+      countDisplay.textContent = `${visibleCount} Itens`;
+    }
+
+    // Dynamic empty row
+    let emptyRow = document.getElementById('admin-menu-empty-filtered');
+    if (!emptyRow) {
+      emptyRow = document.createElement('tr');
+      emptyRow.id = 'admin-menu-empty-filtered';
+      emptyRow.innerHTML = `
+        <td colspan="5" class="text-center py-5 text-white-50">
+          <i class="fa-solid fa-utensils fa-2x mb-2 text-warning opacity-50 d-block"></i>
+          <span class="fs-6 d-block text-white mb-1">Seidauk iha menu ne'ebé asigna ba kategoria ne'e.</span>
+          <small class="text-white-50 d-block mb-3">Klik butaun kraik atu aumenta menu foun ba kategoria ne'e.</small>
+          <button class="btn btn-sm btn-warning text-dark rounded-pill px-3 py-1.5 fw-bold shadow-sm" onclick="openCreateMenuItemModal(currentActiveMenuCat)">
+            <i class="fa-solid fa-plus me-1"></i> Aumenta Menu ba Kategoria Ne'e
+          </button>
+        </td>
+      `;
+      document.querySelector('#admin-menu-table tbody')?.appendChild(emptyRow);
+    }
+    emptyRow.style.display = (visibleCount === 0) ? '' : 'none';
+  }
+
+  // --------------------------------------------------------------------------
+  // Category Menu Accordion & Quick Jump Handlers
+  // --------------------------------------------------------------------------
+  function toggleCategoryMenuAccordion(catId) {
+    const subrow = document.getElementById(`cat-menu-subrow-${catId}`);
+    const chevron = document.getElementById(`cat-chevron-${catId}`);
+    if (!subrow) return;
+
+    if (subrow.style.display === 'none' || !subrow.style.display) {
+      subrow.style.display = 'table-row';
+      if (chevron) chevron.style.transform = 'rotate(180deg)';
+    } else {
+      subrow.style.display = 'none';
+      if (chevron) chevron.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  function goToCategoryInMenuPanel(catId) {
+    // Switch dock tab to #menu-panel
+    const menuTabBtn = document.querySelector('.dock-item-btn[data-dock-tab="#menu-panel"]');
+    if (menuTabBtn) {
+      menuTabBtn.click();
+    } else {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('show', 'active'));
+      document.getElementById('menu-panel')?.classList.add('show', 'active');
+    }
+    // Select category pill
+    const pill = document.querySelector(`.admin-cat-pill[data-cat="${catId}"]`);
+    if (pill) {
+      filterAdminMenuByCategory(catId, pill);
+      pill.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }
 
   // --------------------------------------------------------------------------
   // Menu Item Modal & Form Handlers
   // --------------------------------------------------------------------------
-  function openCreateMenuItemModal() {
+  function openCreateMenuItemModal(preselectedCatId) {
     document.getElementById('menu-modal-title').textContent = t('btn_add_menu') || 'Aumenta Menu Foun';
     document.getElementById('menu-item-id').value = '';
     document.getElementById('menu-form-name').value = '';
-    document.getElementById('menu-form-category').selectedIndex = 0;
+
+    const catSelect = document.getElementById('menu-form-category');
+    const targetCat = preselectedCatId || (currentActiveMenuCat !== 'all' ? currentActiveMenuCat : null);
+    if (targetCat && targetCat !== 'all') {
+      catSelect.value = targetCat;
+    } else {
+      catSelect.selectedIndex = 0;
+    }
+
     document.getElementById('menu-form-price').value = '';
     document.getElementById('menu-form-sku').value = '';
     document.getElementById('menu-form-sort').value = '0';
@@ -924,6 +1127,17 @@
     const modal = new bootstrap.Modal(document.getElementById('menuItemModal'));
     modal.show();
   }
+
+  // Auto-restore selected category filter on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const savedCat = sessionStorage.getItem('celvass_admin_active_cat');
+    if (savedCat && savedCat !== 'all') {
+      const pill = document.querySelector(`.admin-cat-pill[data-cat="${savedCat}"]`);
+      if (pill) {
+        filterAdminMenuByCategory(savedCat, pill);
+      }
+    }
+  });
 
   async function openEditMenuItemModal(itemId) {
     try {

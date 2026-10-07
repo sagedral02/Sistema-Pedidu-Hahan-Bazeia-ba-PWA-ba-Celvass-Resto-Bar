@@ -65,9 +65,10 @@ class CustomerApp {
         document.querySelectorAll('.cat-pill').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
 
-        const cat = btn.dataset.category;
+        const cat = String(btn.dataset.category || btn.getAttribute('data-category') || '').trim();
         document.querySelectorAll('.menu-item-col').forEach((card) => {
-          if (cat === 'all' || card.dataset.category === cat) {
+          const cardCat = String(card.dataset.category || card.getAttribute('data-category') || '').trim();
+          if (cat === 'all' || cardCat === cat) {
             card.style.display = 'block';
           } else {
             card.style.display = 'none';
@@ -732,8 +733,10 @@ function closeDockSearch() {
  * Filter menu by category slug
  */
 function filterByCategory(slug) {
+  const targetSlug = String(slug || 'all').trim();
   document.querySelectorAll('.cat-pill').forEach((btn) => {
-    if (btn.dataset.category === slug) {
+    const btnCat = String(btn.dataset.category || btn.getAttribute('data-category') || '').trim();
+    if (btnCat === targetSlug) {
       btn.classList.add('active');
     } else {
       btn.classList.remove('active');
@@ -743,7 +746,8 @@ function filterByCategory(slug) {
   const items = document.querySelectorAll('.menu-item-col');
   let visibleCount = 0;
   items.forEach((col) => {
-    if (slug === 'all' || col.dataset.category === slug) {
+    const colCat = String(col.dataset.category || col.getAttribute('data-category') || '').trim();
+    if (targetSlug === 'all' || colCat === targetSlug) {
       col.style.display = 'block';
       visibleCount++;
     } else {
