@@ -5,7 +5,7 @@ from apps.accounts.permissions import role_required
 from apps.accounts.models import Role
 from apps.tables.models import RestaurantTable, TableSession, SessionStatus
 from apps.tables.selectors import get_table_by_qr_token, get_active_session_for_table, list_tables_with_status
-from apps.catalog.selectors import get_categories, get_all_menu_items
+from apps.catalog.selectors import get_categories, get_categories_with_counts, get_all_menu_items
 from apps.ordering.models import Order
 from apps.reporting.selectors import get_dashboard_metrics
 from apps.audit.selectors import get_recent_audit_events
@@ -92,7 +92,7 @@ def kitchen_portal_view(request):
 def admin_portal_view(request):
     metrics = get_dashboard_metrics()
     menu_items = get_all_menu_items()
-    categories = get_categories(active_only=False)
+    categories = get_categories_with_counts(active_only=False)
     tables = list_tables_with_status()
     audit_events = get_recent_audit_events(limit=50)
 

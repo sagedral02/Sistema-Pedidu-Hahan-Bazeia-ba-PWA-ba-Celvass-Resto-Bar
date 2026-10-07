@@ -21,9 +21,17 @@ from apps.tables.services import (
     open_table_session, close_table_session, request_bill_for_session, rotate_table_qr,
     request_table_activation, approve_table_activation, reject_table_activation
 )
-from apps.catalog.selectors import get_categories, get_public_menu
-from apps.catalog.models import MenuItem
-from apps.catalog.services import set_menu_item_availability, update_menu_item_price
+from apps.restaurants.models import Restaurant
+from apps.catalog.selectors import (
+    get_categories, get_categories_with_counts, get_category_by_id,
+    get_public_menu, get_all_menu_items, get_menu_item_by_id
+)
+from apps.catalog.models import Category, MenuItem, ItemAvailability
+from apps.catalog.services import (
+    set_menu_item_availability, update_menu_item_price,
+    create_category, update_category, delete_category,
+    create_menu_item, update_menu_item, delete_menu_item
+)
 from apps.ordering.models import Order, OrderStatus
 from apps.ordering.services import submit_customer_order, confirm_order_by_cashier, reject_order_by_cashier, cancel_order_by_staff
 from apps.ordering.selectors import get_pending_orders_for_cashier, get_orders_for_session, get_order_by_code
@@ -35,6 +43,8 @@ from apps.payments.selectors import get_completed_payment_for_session
 
 from .serializers import (
     RestaurantTableSerializer, CategorySerializer, MenuItemSerializer,
+    AdminCategorySerializer, CategoryCreateUpdateSerializer,
+    AdminMenuItemSerializer, MenuItemCreateUpdateSerializer,
     OrderSerializer, OrderSubmitRequestSerializer, CashPaymentRequestSerializer,
     TableActivationRequestSerializer
 )
@@ -617,6 +627,230 @@ class AdminRotateTableQRAPIView(APIView):
             return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
 
 
+class AdminCategoryListCreateAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        categories = get_categories_with_counts(active_only=False)
+        serializer = AdminCategorySerializer(categories, many=True)
+        return api_response(serializer.data)
+
+    def post(self, request):
+        serializer = CategoryCreateUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus kategoria la válidu.", details=serializer.errors)
+
+        restaurant = Restaurant.objects.first()
+        if not restaurant:
+            return api_error("RESTAURANT_NOT_FOUND", "Restorante seidauk konfigura.")
+
+        try:
+            category = create_category(
+                restaurant=restaurant,
+                name=serializer.validated_data['name'],
+                slug=serializer.validated_data.get('slug'),
+                description=serializer.validated_data.get('description', ''),
+                icon_name=serializer.validated_data.get('icon_name', 'utensils'),
+                sort_order=serializer.validated_data.get('sort_order', 0),
+                is_active=serializer.validated_data.get('is_active', True),
+                actor_user=request.user
+            )
+            return api_response(AdminCategorySerializer(category).data, http_status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            return api_error("CATEGORY_ERROR", msg)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminCategoryDetailAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request, category_id):
+        category = get_category_by_id(category_id)
+        if not category:
+            return api_error("RESOURCE_NOT_FOUND", "Kategoria la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        return api_response(AdminCategorySerializer(category).data)
+
+    def put(self, request, category_id):
+        return self.patch(request, category_id)
+
+    def patch(self, request, category_id):
+        category = get_category_by_id(category_id)
+        if not category:
+            return api_error("RESOURCE_NOT_FOUND", "Kategoria la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CategoryCreateUpdateSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus kategoria la válidu.", details=serializer.errors)
+
+        try:
+            updated = update_category(
+                category=category,
+                name=serializer.validated_data.get('name'),
+                slug=serializer.validated_data.get('slug'),
+                description=serializer.validated_data.get('description'),
+                icon_name=serializer.validated_data.get('icon_name'),
+                sort_order=serializer.validated_data.get('sort_order'),
+                is_active=serializer.validated_data.get('is_active'),
+                actor_user=request.user
+            )
+            return api_response(AdminCategorySerializer(updated).data)
+        except ValidationError as e:
+            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            return api_error("CATEGORY_ERROR", msg)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, category_id):
+        category = get_category_by_id(category_id)
+        if not category:
+            return api_error("RESOURCE_NOT_FOUND", "Kategoria la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            delete_category(category=category, actor_user=request.user)
+            return api_response({"deleted": True, "message": "Kategoria hamos ho susesu!"})
+        except ValidationError as e:
+            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            return api_error("CATEGORY_DELETE_ERROR", msg)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminCategoryToggleStatusAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def post(self, request, category_id):
+        category = get_category_by_id(category_id)
+        if not category:
+            return api_error("RESOURCE_NOT_FOUND", "Kategoria la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        updated = update_category(
+            category=category,
+            is_active=not category.is_active,
+            actor_user=request.user
+        )
+        return api_response(AdminCategorySerializer(updated).data)
+
+
+class AdminMenuItemListCreateAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        items = get_all_menu_items()
+        serializer = AdminMenuItemSerializer(items, many=True)
+        return api_response(serializer.data)
+
+    def post(self, request):
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        serializer = MenuItemCreateUpdateSerializer(data=data)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus menu la válidu.", details=serializer.errors)
+
+        category = get_category_by_id(serializer.validated_data['category_id'])
+        if not category:
+            return api_error("RESOURCE_NOT_FOUND", "Kategoria ne'ebé hili la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        restaurant = category.restaurant or Restaurant.objects.first()
+        image_file = request.FILES.get('image') or serializer.validated_data.get('image')
+
+        try:
+            item = create_menu_item(
+                restaurant=restaurant,
+                category=category,
+                name=serializer.validated_data['name'],
+                price=serializer.validated_data['price'],
+                slug=serializer.validated_data.get('slug'),
+                sku=serializer.validated_data.get('sku', ''),
+                description=serializer.validated_data.get('description', ''),
+                image=image_file,
+                image_url=serializer.validated_data.get('image_url', ''),
+                availability=serializer.validated_data.get('availability', 'AVAILABLE'),
+                is_featured=serializer.validated_data.get('is_featured', False),
+                sort_order=serializer.validated_data.get('sort_order', 0),
+                preparation_note=serializer.validated_data.get('preparation_note', ''),
+                actor_user=request.user
+            )
+            return api_response(AdminMenuItemSerializer(item).data, http_status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            return api_error("MENU_ERROR", msg)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminMenuItemDetailAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request, item_id):
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        return api_response(AdminMenuItemSerializer(item).data)
+
+    def put(self, request, item_id):
+        return self.patch(request, item_id)
+
+    def patch(self, request, item_id):
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        serializer = MenuItemCreateUpdateSerializer(data=data, partial=True)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus menu la válidu.", details=serializer.errors)
+
+        category = None
+        if 'category_id' in serializer.validated_data:
+            category = get_category_by_id(serializer.validated_data['category_id'])
+            if not category:
+                return api_error("RESOURCE_NOT_FOUND", "Kategoria ne'ebé hili la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        image_file = request.FILES.get('image') or serializer.validated_data.get('image')
+
+        try:
+            updated = update_menu_item(
+                item=item,
+                name=serializer.validated_data.get('name'),
+                category=category,
+                price=serializer.validated_data.get('price'),
+                slug=serializer.validated_data.get('slug'),
+                sku=serializer.validated_data.get('sku'),
+                description=serializer.validated_data.get('description'),
+                image=image_file if image_file is not None else None,
+                image_url=serializer.validated_data.get('image_url'),
+                availability=serializer.validated_data.get('availability'),
+                is_featured=serializer.validated_data.get('is_featured'),
+                sort_order=serializer.validated_data.get('sort_order'),
+                preparation_note=serializer.validated_data.get('preparation_note'),
+                actor_user=request.user
+            )
+            return api_response(AdminMenuItemSerializer(updated).data)
+        except ValidationError as e:
+            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            return api_error("MENU_ERROR", msg)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, item_id):
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            result = delete_menu_item(item=item, actor_user=request.user)
+            return api_response(result)
+        except Exception as e:
+            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 class CashierOrdersHistoryAPIView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated, IsCashierOrAdmin]
@@ -757,12 +991,11 @@ class AdminUserCreateAPIView(APIView):
             username=username,
             password=password,
             role=role,
-            first_name=first_name,
-            restaurant=getattr(request.user, 'restaurant', None)
+            full_name=first_name,
         )
         return api_response({
             'id': str(user.id),
             'username': user.username,
             'role': user.role,
-            'first_name': user.first_name,
+            'full_name': user.full_name,
         }, http_status=status.HTTP_201_CREATED)

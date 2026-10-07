@@ -36,6 +36,55 @@ class CategorySerializer(serializers.ModelSerializer):
         items = obj.items.filter(availability__in=['AVAILABLE', 'SOLD_OUT']).order_by('sort_order', 'name')
         return MenuItemSerializer(items, many=True).data
 
+class AdminCategorySerializer(serializers.ModelSerializer):
+    item_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'slug', 'description', 'icon_name', 'sort_order', 'is_active', 'item_count', 'created_at']
+
+    def get_item_count(self, obj):
+        if hasattr(obj, 'item_count'):
+            return obj.item_count
+        return obj.items.count()
+
+class CategoryCreateUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    slug = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    icon_name = serializers.CharField(max_length=50, required=False, default="utensils")
+    sort_order = serializers.IntegerField(required=False, default=0)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+class AdminMenuItemSerializer(serializers.ModelSerializer):
+    display_image = serializers.ReadOnlyField()
+    category_id = serializers.UUIDField(source='category.id', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    category_slug = serializers.CharField(source='category.slug', read_only=True)
+
+    class Meta:
+        model = MenuItem
+        fields = [
+            'id', 'name', 'slug', 'sku', 'description', 'price',
+            'display_image', 'image_url', 'availability', 'is_featured', 'sort_order',
+            'preparation_note', 'category_id', 'category_name', 'category_slug', 'created_at'
+        ]
+
+class MenuItemCreateUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150)
+    category_id = serializers.UUIDField()
+    price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.00'))
+    slug = serializers.CharField(max_length=180, required=False, allow_blank=True)
+    sku = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    image_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    availability = serializers.ChoiceField(choices=['AVAILABLE', 'SOLD_OUT', 'INACTIVE'], required=False, default='AVAILABLE')
+    is_featured = serializers.BooleanField(required=False, default=False)
+    sort_order = serializers.IntegerField(required=False, default=0)
+    preparation_note = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 class RestaurantTableSerializer(serializers.ModelSerializer):
     active_session = serializers.SerializerMethodField()
     pending_activation = serializers.SerializerMethodField()

@@ -35,6 +35,11 @@ urlpatterns = [
     path('kitchen/orders/<uuid:order_id>/served/', views.KitchenServedOrderAPIView.as_view(), name='api-kitchen-served-order'),
 
     # Admin API
+    path('admin/categories/', views.AdminCategoryListCreateAPIView.as_view(), name='api-admin-categories-list-create'),
+    path('admin/categories/<uuid:category_id>/', views.AdminCategoryDetailAPIView.as_view(), name='api-admin-category-detail'),
+    path('admin/categories/<uuid:category_id>/toggle-status/', views.AdminCategoryToggleStatusAPIView.as_view(), name='api-admin-category-toggle-status'),
+    path('admin/menu-items/', views.AdminMenuItemListCreateAPIView.as_view(), name='api-admin-menu-items-list-create'),
+    path('admin/menu-items/<uuid:item_id>/', views.AdminMenuItemDetailAPIView.as_view(), name='api-admin-menu-item-detail'),
     path('admin/menu-items/<uuid:item_id>/toggle-availability/', views.AdminToggleMenuItemAvailabilityAPIView.as_view(), name='api-admin-toggle-menu'),
     path('admin/tables/<uuid:table_id>/rotate-qr/', views.AdminRotateTableQRAPIView.as_view(), name='api-admin-rotate-qr'),
     path('admin/users/create/', views.AdminUserCreateAPIView.as_view(), name='api-admin-user-create'),
