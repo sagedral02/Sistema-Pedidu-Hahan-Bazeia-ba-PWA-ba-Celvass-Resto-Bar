@@ -1,100 +1,39 @@
 {% extends 'base/base.html' %}
 {% load static %}
 
-{% block title %}Kitchen Display System (KDS) - {{ current_restaurant.name }}{% endblock %}
+{% block title %}Dapur - {{ current_restaurant.name }}{% endblock %}
+{% block role %}kitchen{% endblock %}
+{% block default_panel %}kds-panel{% endblock %}
 
-{% block body_class %}kds-body{% endblock %}
+{% block topbar %}{% include 'base/_nav_kitchen.html' %}{% endblock %}
+{% block tabbar %}{% include 'base/_tabbar_kitchen.html' %}{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-2 px-sm-3 py-2 py-md-3">
-
-  <!-- Compact Responsive Header -->
-  <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom border-white border-opacity-10 flex-wrap gap-1">
-    <div>
-      <h5 class="fw-bold mb-0 text-white d-flex align-items-center fs-6 fs-sm-5">
-        <i class="fa-solid fa-fire-burner text-warning me-1.5"></i>
-        <span data-i18n="kds_title">Sistema Dapur (KDS)</span>
-      </h5>
-      <small class="text-white-50 d-none d-sm-inline" data-i18n="kds_subtitle" style="font-size:0.75rem;">Fila Dapur Real-time</small>
+<section class="app-panel" id="kds-panel" aria-label="Fila dapur">
+  <div class="kds-board" data-view-host data-default-view="CONFIRMED">
+    <div class="kds-col" data-col="CONFIRMED">
+      <div class="kds-col-head">
+        <h2 class="kds-col-title"><span class="dot" style="background:var(--warning)"></span><span data-i18n="kds_col1">Pedidu foun</span></h2>
+        <span class="kds-col-count" id="count-confirmed">0</span>
+      </div>
+      <div class="kds-col-scroll" id="kds-confirmed-col" aria-live="polite"></div>
     </div>
-
-    <div class="d-flex align-items-center gap-1.5">
-      <button class="btn btn-sm btn-outline-warning rounded-pill py-0.5 px-2.5 shadow-sm" onclick="kdsApp.loadQueue()" style="font-size:0.75rem;">
-        <i class="fa-solid fa-rotate me-1"></i> Refresh
-      </button>
-      <span class="badge bg-dark bg-opacity-75 border border-secondary text-light py-1 px-2 rounded-pill" style="font-size:0.72rem;">
-        <i class="fa-solid fa-utensils me-1 text-warning"></i> Live
-      </span>
+    <div class="kds-col" data-col="PREPARING">
+      <div class="kds-col-head">
+        <h2 class="kds-col-title"><span class="dot" style="background:var(--accent)"></span><span data-i18n="kds_col2">Tein hela</span></h2>
+        <span class="kds-col-count" id="count-preparing">0</span>
+      </div>
+      <div class="kds-col-scroll" id="kds-preparing-col"></div>
+    </div>
+    <div class="kds-col" data-col="READY">
+      <div class="kds-col-head">
+        <h2 class="kds-col-title"><span class="dot" style="background:var(--success)"></span><span data-i18n="kds_col3">Prontu atu serve</span></h2>
+        <span class="kds-col-count" id="count-ready">0</span>
+      </div>
+      <div class="kds-col-scroll" id="kds-ready-col"></div>
     </div>
   </div>
-
-  <!-- Mobile Segmented Tabs Switcher (Visible on < 768px only) -->
-  <div class="kds-mobile-tabs d-flex d-md-none gap-1.5 mb-2">
-    <button class="btn btn-sm btn-warning flex-fill active fw-bold rounded-pill text-dark shadow-sm py-1 px-1 text-truncate" style="font-size:0.75rem;" id="btn-tab-confirmed" onclick="kdsApp.switchMobileTab('CONFIRMED')">
-      <i class="fa-solid fa-clock me-0.5"></i> Foun (<span id="count-confirmed-m">0</span>)
-    </button>
-    <button class="btn btn-sm btn-outline-info flex-fill fw-bold rounded-pill py-1 px-1 text-truncate" style="font-size:0.75rem;" id="btn-tab-preparing" onclick="kdsApp.switchMobileTab('PREPARING')">
-      <i class="fa-solid fa-fire me-0.5"></i> Tein (<span id="count-preparing-m">0</span>)
-    </button>
-    <button class="btn btn-sm btn-outline-success flex-fill fw-bold rounded-pill py-1 px-1 text-truncate" style="font-size:0.75rem;" id="btn-tab-ready" onclick="kdsApp.switchMobileTab('READY')">
-      <i class="fa-solid fa-bell me-0.5"></i> Prontu (<span id="count-ready-m">0</span>)
-    </button>
-  </div>
-
-  <!-- KDS 3-Column Kanban Board -->
-  <div class="row g-2 g-md-3" id="kds-kanban-row">
-    
-    <!-- Column 1: Confirmed (New) -->
-    <div class="col-lg-4 col-md-6 col-12" id="kds-col-wrapper-confirmed">
-      <div class="glass-card p-2 p-sm-3 rounded-3 border-warning border-opacity-40 h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-center mb-2 pb-1.5 border-bottom border-white border-opacity-10">
-          <h6 class="fw-bold mb-0 text-warning fs-6">
-            <i class="fa-solid fa-clock text-warning me-1"></i> <span data-i18n="kds_col1">1. Pedidu Foun</span>
-          </h6>
-          <span class="badge bg-warning text-dark fw-bold rounded-pill px-2 py-0.5 small" id="count-confirmed">0</span>
-        </div>
-
-        <div id="kds-confirmed-col" class="overflow-auto pe-1" style="max-height: calc(100vh - 170px);">
-          <!-- Populated by kitchen.js -->
-        </div>
-      </div>
-    </div>
-
-    <!-- Column 2: In Preparation (Cooking) -->
-    <div class="col-lg-4 col-md-6 col-12" id="kds-col-wrapper-preparing">
-      <div class="glass-card p-2 p-sm-3 rounded-3 border-info border-opacity-40 h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-center mb-2 pb-1.5 border-bottom border-white border-opacity-10">
-          <h6 class="fw-bold mb-0 text-info fs-6">
-            <i class="fa-solid fa-fire text-info me-1"></i> <span data-i18n="kds_col2">2. Tein Hela</span>
-          </h6>
-          <span class="badge bg-info text-dark fw-bold rounded-pill px-2 py-0.5 small" id="count-preparing">0</span>
-        </div>
-
-        <div id="kds-preparing-col" class="overflow-auto pe-1" style="max-height: calc(100vh - 170px);">
-          <!-- Populated by kitchen.js -->
-        </div>
-      </div>
-    </div>
-
-    <!-- Column 3: Ready for Serving -->
-    <div class="col-lg-4 col-md-12 col-12" id="kds-col-wrapper-ready">
-      <div class="glass-card p-2 p-sm-3 rounded-3 border-success border-opacity-40 h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-center mb-2 pb-1.5 border-bottom border-white border-opacity-10">
-          <h6 class="fw-bold mb-0 text-success fs-6">
-            <i class="fa-solid fa-bell text-success me-1"></i> <span data-i18n="kds_col3">3. Prontu Atu Serve</span>
-          </h6>
-          <span class="badge bg-success text-white fw-bold rounded-pill px-2 py-0.5 small" id="count-ready">0</span>
-        </div>
-
-        <div id="kds-ready-col" class="overflow-auto pe-1" style="max-height: calc(100vh - 170px);">
-          <!-- Populated by kitchen.js -->
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-</div>
+</section>
 {% endblock %}
 
 {% block extra_js %}

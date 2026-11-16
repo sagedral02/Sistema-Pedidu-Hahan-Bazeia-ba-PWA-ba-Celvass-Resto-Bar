@@ -1,0 +1,17 @@
+<header class="app-topbar">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="{% url 'kitchen-portal' %}">
+      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-fire-burner"></i></span>
+      <span class="min-w-0">
+        <span class="app-brand-text d-block" data-i18n="kds_title">Dapur (KDS)</span>
+        <span class="app-brand-sub">{{ current_restaurant.name }}</span>
+      </span>
+    </a>
+    <div class="app-topbar-actions">
+      <span class="badge-soft d-none d-sm-inline-flex" data-ws-status><i class="fa-solid fa-circle fs-8" aria-hidden="true"></i><span data-ws-label>Live</span></span>
+      <button type="button" class="icon-btn" onclick="kdsApp.loadQueue()" aria-label="Atualiza" data-i18n-title="refresh" title="Atualiza"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+      <button type="button" class="icon-btn d-none d-md-inline-flex" data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen"><i class="fa-solid fa-expand" aria-hidden="true"></i></button>
+      {% include 'base/_account_menu.html' %}
+    </div>
+  </div>
+</header>

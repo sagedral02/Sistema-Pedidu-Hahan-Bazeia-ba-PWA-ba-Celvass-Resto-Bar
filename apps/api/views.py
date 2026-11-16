@@ -21,6 +21,9 @@ from apps.tables.services import (
     open_table_session, close_table_session, request_bill_for_session, rotate_table_qr,
     request_table_activation, approve_table_activation, reject_table_activation
 )
+from apps.tables.device import (
+    extract_device_token, is_device_authorized, claim_session_if_unclaimed, parse_guest_count,
+)
 from apps.restaurants.models import Restaurant
 from apps.catalog.selectors import (
     get_categories, get_categories_with_counts, get_category_by_id,
@@ -67,6 +70,31 @@ def api_response(data=None, success=True, error=None, http_status=status.HTTP_20
             "message": "An error occurred."
         }
     return Response(body, status=http_status)
+
+GENERIC_SERVER_ERROR_MESSAGE = "Erro iha servidór. Favor koko fali ka kontaktu Kaixa."
+
+
+def server_error(exc, context=""):
+    """Log the full exception and return a generic message without internal details."""
+    logger.exception("Unhandled API error %s: %s", context, exc)
+    return api_error("SERVER_ERROR", GENERIC_SERVER_ERROR_MESSAGE, http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def validation_message(exc):
+    if hasattr(exc, 'message'):
+        return str(exc.message)
+    if getattr(exc, 'messages', None):
+        return str(exc.messages[0])
+    return str(exc)
+
+
+def device_locked_error():
+    return api_error(
+        "DEVICE_LOCKED",
+        "Meza ne'e okupadu hela hosi telemóvel seluk. Ita-boot labele uza meza ne'e.",
+        http_status=status.HTTP_403_FORBIDDEN,
+    )
+
 
 def api_error(code, message, details=None, http_status=status.HTTP_400_BAD_REQUEST, request_id=None):
     return api_response(
@@ -134,12 +162,11 @@ class PublicTableRequestActivationAPIView(APIView):
                 "session_token": active_session.public_token,
             })
 
-        device_token = (
-            request.headers.get('X-Device-Token') or
-            request.COOKIES.get('celvass_device_id') or
-            request.data.get('device_token') or ""
-        )
-        guest_count = int(request.data.get('guest_count', 2))
+        device_token = extract_device_token(request, request.data)
+        try:
+            guest_count = parse_guest_count(request.data.get('guest_count'), default=2)
+        except ValidationError as e:
+            return api_error("INVALID_INPUT", validation_message(e))
 
         try:
             req = request_table_activation(
@@ -155,10 +182,9 @@ class PublicTableRequestActivationAPIView(APIView):
                 "table_name": table.display_name,
             }, http_status=status.HTTP_201_CREATED)
         except ValidationError as e:
-            return api_error("ACTIVATION_ERROR", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ACTIVATION_ERROR", validation_message(e))
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            return server_error(e, "request-activation")
 
 
 class PublicMenuAPIView(APIView):
@@ -178,19 +204,10 @@ class PublicOrderSubmitAPIView(APIView):
         if not session:
             return api_error("TABLE_SESSION_NOT_OPEN", "Sesi meza la hetan ka taka tiha ona.", http_status=status.HTTP_404_NOT_FOUND)
 
-        # Device locking verification
-        device_token = (
-            request.headers.get('X-Device-Token') or
-            request.COOKIES.get('celvass_device_id') or
-            request.data.get('device_token')
-        )
-        if session.primary_device_token:
-            if device_token and device_token != session.primary_device_token:
-                return api_error("DEVICE_LOCKED", "Meza ne'e okupadu hela hosi telemóvel seluk. Ita-boot labele aumenta pedidu ba meza ne'e.", http_status=status.HTTP_403_FORBIDDEN)
-        elif device_token:
-            session.primary_device_token = device_token
-            session.authorized_device_tokens = [device_token]
-            session.save(update_fields=['primary_device_token', 'authorized_device_tokens'])
+        device_token = extract_device_token(request, request.data)
+        if not is_device_authorized(session, device_token):
+            return device_locked_error()
+        claim_session_if_unclaimed(session, device_token)
 
         idempotency_key = request.headers.get('Idempotency-Key') or request.data.get('idempotency_key')
         if not idempotency_key:
@@ -211,9 +228,9 @@ class PublicOrderSubmitAPIView(APIView):
             order_data = OrderSerializer(order).data
             return api_response(order_data, http_status=status.HTTP_201_CREATED)
         except ValidationError as e:
-            return api_error("ORDER_VALIDATION_ERROR", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_VALIDATION_ERROR", validation_message(e))
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, "order-submit")
 
 
 class PublicOrderListAPIView(APIView):
@@ -223,7 +240,9 @@ class PublicOrderListAPIView(APIView):
         session = get_session_by_public_token(session_token)
         if not session:
             return api_error("TABLE_SESSION_NOT_OPEN", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
-        
+        if not is_device_authorized(session, extract_device_token(request)):
+            return device_locked_error()
+
         orders = get_orders_for_session(session.id)
         serializer = OrderSerializer(orders, many=True)
         return api_response(serializer.data)
@@ -236,6 +255,8 @@ class PublicOrderDetailAPIView(APIView):
         order = get_order_by_code(order_code, session_token=session_token)
         if not order:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        if not is_device_authorized(order.table_session, extract_device_token(request)):
+            return device_locked_error()
         return api_response(OrderSerializer(order).data)
 
 
@@ -247,15 +268,9 @@ class PublicRequestBillAPIView(APIView):
         if not session:
             return api_error("TABLE_SESSION_NOT_OPEN", "Sesi meza la hetan ka taka tiha ona.", http_status=status.HTTP_404_NOT_FOUND)
 
-        # Device locking verification
-        device_token = (
-            request.headers.get('X-Device-Token') or
-            request.COOKIES.get('celvass_device_id') or
-            request.data.get('device_token')
-        )
-        if session.primary_device_token and device_token and device_token != session.primary_device_token:
-            return api_error("DEVICE_LOCKED", "Meza ne'e okupadu hela hosi telemóvel seluk.", http_status=status.HTTP_403_FORBIDDEN)
-        
+        if not is_device_authorized(session, extract_device_token(request, request.data)):
+            return device_locked_error()
+
         if session.status == SessionStatus.PAID:
             bill = calculate_session_bill(session)
             return api_response({
@@ -283,11 +298,9 @@ class PublicRequestBillAPIView(APIView):
                 "bill": bill
             })
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
-            return api_error("BILL_REQUEST_INVALID", msg, http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("BILL_REQUEST_INVALID", validation_message(e))
         except Exception as e:
-            logger.exception("Error requesting bill for session %s: %s", session_token, e)
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, "request-bill")
 
 
 class PublicBillDetailAPIView(APIView):
@@ -297,7 +310,9 @@ class PublicBillDetailAPIView(APIView):
         session = get_session_by_public_token(session_token)
         if not session:
             return api_error("TABLE_SESSION_NOT_OPEN", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
-        
+        if not is_device_authorized(session, extract_device_token(request)):
+            return device_locked_error()
+
         bill = calculate_session_bill(session)
         payment = get_completed_payment_for_session(session)
         
@@ -341,7 +356,7 @@ class CashierConfirmOrderAPIView(APIView):
         except Order.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("ORDER_INVALID_STATE", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
 class CashierRejectOrderAPIView(APIView):
@@ -361,7 +376,7 @@ class CashierRejectOrderAPIView(APIView):
         except Order.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("ORDER_INVALID_STATE", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
 class CashierTablesListAPIView(APIView):
@@ -379,7 +394,10 @@ class CashierOpenTableSessionAPIView(APIView):
     permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
 
     def post(self, request, table_id):
-        guest_count = int(request.data.get('guest_count', 1))
+        try:
+            guest_count = parse_guest_count(request.data.get('guest_count'), default=1)
+        except ValidationError as e:
+            return api_error("INVALID_INPUT", validation_message(e))
         try:
             table = RestaurantTable.objects.get(id=table_id)
             user = request.user if request.user.is_authenticated else None
@@ -394,7 +412,7 @@ class CashierOpenTableSessionAPIView(APIView):
         except RestaurantTable.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("TABLE_SESSION_ALREADY_OPEN", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("TABLE_SESSION_ALREADY_OPEN", validation_message(e))
 
 
 class CashierCloseTableSessionAPIView(APIView):
@@ -445,9 +463,9 @@ class CashierApproveActivationAPIView(APIView):
                 "guest_count": session.guest_count,
             }, http_status=status.HTTP_200_OK)
         except ValidationError as e:
-            return api_error("ACTIVATION_ERROR", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ACTIVATION_ERROR", validation_message(e))
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, "approve-activation")
 
 
 class CashierRejectActivationAPIView(APIView):
@@ -457,14 +475,19 @@ class CashierRejectActivationAPIView(APIView):
     def post(self, request, request_id):
         user = request.user if request.user.is_authenticated else None
         reason = request.data.get('reason', '')
+        from apps.tables.models import TableActivationRequest
         try:
             req = reject_table_activation(request_id=str(request_id), rejected_by=user, reason=reason)
             return api_response({
                 "request_id": str(req.id),
                 "status": req.status,
             })
+        except TableActivationRequest.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Pedidu loke meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return api_error("ACTIVATION_ERROR", validation_message(e))
         except Exception as e:
-            return api_error("ACTIVATION_ERROR", str(e), http_status=status.HTTP_400_BAD_REQUEST)
+            return server_error(e, "reject-activation")
 
 
 class CashierPaymentAPIView(APIView):
@@ -526,7 +549,7 @@ class CashierPaymentAPIView(APIView):
         except TableSession.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("PAYMENT_ERROR", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("PAYMENT_ERROR", validation_message(e))
 
 
 # ==========================================
@@ -556,7 +579,7 @@ class KitchenStartOrderAPIView(APIView):
         except Order.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("ORDER_INVALID_STATE", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
 class KitchenReadyOrderAPIView(APIView):
@@ -572,7 +595,7 @@ class KitchenReadyOrderAPIView(APIView):
         except Order.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("ORDER_INVALID_STATE", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
 class KitchenServedOrderAPIView(APIView):
@@ -588,7 +611,7 @@ class KitchenServedOrderAPIView(APIView):
         except Order.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
-            return api_error("ORDER_INVALID_STATE", str(e.message if hasattr(e, 'message') else e), http_status=status.HTTP_400_BAD_REQUEST)
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
 # ==========================================
@@ -658,10 +681,10 @@ class AdminCategoryListCreateAPIView(APIView):
             )
             return api_response(AdminCategorySerializer(category).data, http_status=status.HTTP_201_CREATED)
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            msg = validation_message(e)
             return api_error("CATEGORY_ERROR", msg)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
 
 class AdminCategoryDetailAPIView(APIView):
@@ -699,10 +722,10 @@ class AdminCategoryDetailAPIView(APIView):
             )
             return api_response(AdminCategorySerializer(updated).data)
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            msg = validation_message(e)
             return api_error("CATEGORY_ERROR", msg)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
     def delete(self, request, category_id):
         category = get_category_by_id(category_id)
@@ -713,10 +736,10 @@ class AdminCategoryDetailAPIView(APIView):
             delete_category(category=category, actor_user=request.user)
             return api_response({"deleted": True, "message": "Kategoria hamos ho susesu!"})
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            msg = validation_message(e)
             return api_error("CATEGORY_DELETE_ERROR", msg)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
 
 class AdminCategoryToggleStatusAPIView(APIView):
@@ -777,10 +800,10 @@ class AdminMenuItemListCreateAPIView(APIView):
             )
             return api_response(AdminMenuItemSerializer(item).data, http_status=status.HTTP_201_CREATED)
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            msg = validation_message(e)
             return api_error("MENU_ERROR", msg)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
 
 class AdminMenuItemDetailAPIView(APIView):
@@ -833,10 +856,10 @@ class AdminMenuItemDetailAPIView(APIView):
             )
             return api_response(AdminMenuItemSerializer(updated).data)
         except ValidationError as e:
-            msg = str(e.message if hasattr(e, 'message') else (e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)))
+            msg = validation_message(e)
             return api_error("MENU_ERROR", msg)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
     def delete(self, request, item_id):
         item = get_menu_item_by_id(item_id)
@@ -847,7 +870,7 @@ class AdminMenuItemDetailAPIView(APIView):
             result = delete_menu_item(item=item, actor_user=request.user)
             return api_response(result)
         except Exception as e:
-            return api_error("SERVER_ERROR", str(e), http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(e, request.path)
 
 
 
@@ -984,8 +1007,14 @@ class AdminUserCreateAPIView(APIView):
             return api_error("INVALID_ROLE", "Papél la válidu.")
 
         from apps.accounts.models import User
+        from django.contrib.auth.password_validation import validate_password
         if User.objects.filter(username=username).exists():
             return api_error("USER_EXISTS", "Naran-uzuáriu ne'e eziste ona.")
+
+        try:
+            validate_password(password, user=User(username=username, full_name=first_name))
+        except ValidationError as e:
+            return api_error("WEAK_PASSWORD", " ".join(e.messages))
 
         user = User.objects.create_user(
             username=username,

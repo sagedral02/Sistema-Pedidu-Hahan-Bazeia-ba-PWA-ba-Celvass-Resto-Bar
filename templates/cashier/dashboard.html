@@ -1,464 +1,280 @@
 {% extends 'base/base.html' %}
 {% load static %}
 
-{% block title %}Sentru Kontrolu Kaixa (POS) — {{ current_restaurant.name }}{% endblock %}
+{% block title %}Kaixa - {{ current_restaurant.name }}{% endblock %}
+{% block role %}cashier{% endblock %}
+{% block default_panel %}pos-panel{% endblock %}
 
-{% block body_class %}cashier-dark-body{% endblock %}
+{% block topbar %}{% include 'base/_nav_cashier.html' %}{% endblock %}
+{% block tabbar %}{% include 'base/_tabbar_cashier.html' %}{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-3 px-md-4 py-3">
 
-  <!-- Header -->
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary border-opacity-25 gap-2">
+<!-- POS: incoming queue + tables -->
+<section class="app-panel" id="pos-panel" aria-labelledby="pos-title">
+  <div class="page-head">
     <div>
-      <h4 class="fw-bold mb-0 text-white d-flex align-items-center fs-5">
-        <i class="fa-solid fa-cash-register text-warning me-2"></i>
-        <span data-i18n="cashier_title">Sentru Kontrolu Kaixa &amp; POS</span>
-      </h4>
-      <small class="text-white-50 d-none d-sm-inline" style="font-size:0.78rem;" data-i18n="cashier_subtitle">Portaun Verifikasaun Pedidu, Sesi Meza, &amp; Pagamentu POS Real-time</small>
+      <h1 class="page-title" id="pos-title" data-i18n="cashier_title">Kaixa</h1>
+      <p class="page-subtitle" data-i18n="cashier_subtitle">Verifika pedidu, jere meza no simu pagamentu.</p>
+    </div>
+    <div class="segmented d-none d-md-inline-flex d-lg-none" role="tablist" aria-label="Haree">
+      <button type="button" role="tab" data-panel="pos-panel" data-view="queue"><span data-i18n="nav_queue">Fila</span></button>
+      <button type="button" role="tab" data-panel="pos-panel" data-view="tables"><span data-i18n="nav_tables">Meza</span></button>
+    </div>
+  </div>
+
+  <div class="pos-layout" data-view-host data-default-view="queue">
+    <div class="pos-queue pos-column">
+      <div class="surface surface-pad">
+        <div class="section-head">
+          <h2 class="section-title"><span data-i18n="pending_queue_title">Fila verifikasaun</span> <span class="count" id="pending-total-label">0</span></h2>
+        </div>
+        <div class="pos-column-scroll">
+          <div id="activation-requests-container"></div>
+          <div id="pending-orders-container" aria-live="polite"></div>
+        </div>
+      </div>
     </div>
 
+    <div class="pos-tables">
+      <div class="surface surface-pad">
+        <div class="section-head">
+          <h2 class="section-title" data-i18n="tables_pos_title">Meza</h2>
+          <div class="segmented" role="group" aria-label="Filtra meza">
+            <button type="button" class="is-active" id="filter-table-all" onclick="cashierApp.setTableFilter('ALL')"><span data-i18n="filter_all_tables">Hotu</span></button>
+            <button type="button" id="filter-table-open" onclick="cashierApp.setTableFilter('OPEN')"><span data-i18n="filter_open_tables">Okupadu</span></button>
+            <button type="button" id="filter-table-avail" onclick="cashierApp.setTableFilter('AVAILABLE')"><span data-i18n="filter_avail_tables">Mamuk</span></button>
+          </div>
+        </div>
+        <div class="tables-grid" id="tables-grid-container"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bill requests -->
+<section class="app-panel" id="bill-alerts-panel" aria-labelledby="bills-title" hidden>
+  <div class="page-head">
     <div>
-      <button class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-1 fw-semibold" onclick="cashierApp.loadPendingOrders(); cashierApp.loadTables(); cashierApp.loadActivationRequests();">
-        <i class="fa-solid fa-rotate me-1"></i> <span data-i18n="refresh">Refresh</span>
-      </button>
+      <h1 class="page-title" id="bills-title" data-i18n="bill_alerts_title">Meza ne'ebé husu konta</h1>
+      <p class="page-subtitle" data-i18n="bill_alerts_subtitle">Atende lalais atu bainaka la hein kleur.</p>
+    </div>
+  </div>
+  <div class="tables-grid" id="bill-alerts-container"></div>
+</section>
+
+<!-- History -->
+<section class="app-panel" id="orders-history-panel" aria-labelledby="history-title" hidden>
+  <div class="page-head">
+    <h1 class="page-title" id="history-title" data-i18n="order_history">Istóriku</h1>
+    <div class="segmented" role="tablist" aria-label="Tipu istóriku">
+      <button type="button" class="is-active" id="subtab-btn-orders" onclick="cashierApp.switchHistorySubTab('orders')"><span data-i18n="tab_orders_sub">Pedidu</span></button>
+      <button type="button" id="subtab-btn-bills" onclick="cashierApp.switchHistorySubTab('bills')"><span data-i18n="tab_bills_sub">Resibu</span></button>
     </div>
   </div>
 
-  <!-- Tab Panels Content -->
-  <div class="tab-content" id="cashierTabContent">
-
-    <!-- PANEL 1: LIVE POS & QUEUE -->
-    <div class="tab-pane fade show active" id="live-pos-panel">
-      <div class="row g-2 g-md-3">
-        <!-- Left: Incoming Pending Queue -->
-        <div class="col-lg-5 col-md-5 col-12 mb-2 mb-md-0">
-          <div class="glass-card p-2 p-md-3 h-100 border-warning border-opacity-50">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-1.5 border-bottom border-white border-opacity-10">
-              <h6 class="fw-bold mb-0 text-warning d-flex align-items-center fs-6">
-                <i class="fa-solid fa-hourglass-half me-1.5"></i> <span data-i18n="pending_queue_title">Fila Verifikasaun Tama</span>
-              </h6>
-              <span class="badge bg-warning text-dark fw-bold px-2 py-0.5 rounded-pill shadow-sm" data-i18n="pending_gate_badge">
-                Portaun Kaixa
-              </span>
-            </div>
-
-            <!-- Incoming Table Activation Requests -->
-            <div id="activation-requests-container" class="mb-2"></div>
-
-            <div id="pending-orders-container" class="overflow-auto pe-1" style="max-height: calc(100vh - 210px);">
-              <!-- Injected by cashier.js -->
-            </div>
-
-          </div>
-        </div>
-
-        <!-- Right: Tables Grid & POS -->
-        <div class="col-lg-7 col-md-7 col-12">
-          <div class="glass-card p-2 p-md-3 h-100">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-1.5 border-bottom border-white border-opacity-10 flex-wrap gap-2">
-              <h6 class="fw-bold mb-0 text-white d-flex align-items-center fs-6">
-                <i class="fa-solid fa-chair text-primary me-1.5"></i> <span data-i18n="tables_pos_title">Status Meza &amp; Pagamentu POS</span>
-              </h6>
-              <div class="btn-group btn-group-sm" role="group">
-                <button type="button" class="btn btn-warning btn-sm px-2.5 py-0.5 fw-bold rounded-start-pill text-dark" id="filter-table-all" onclick="cashierApp.setTableFilter('ALL')" data-i18n="filter_all_tables">Meza Hotu</button>
-                <button type="button" class="btn btn-outline-success btn-sm px-2.5 py-0.5 fw-bold" id="filter-table-open" onclick="cashierApp.setTableFilter('OPEN')" data-i18n="filter_open_tables">🟢 Sesi Loke</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm px-2.5 py-0.5 fw-bold rounded-end-pill" id="filter-table-avail" onclick="cashierApp.setTableFilter('AVAILABLE')" data-i18n="filter_avail_tables">⚪ Mamuk</button>
-              </div>
-            </div>
-
-            <div class="row g-2 overflow-auto pe-1" id="tables-grid-container" style="max-height: calc(100vh - 210px);">
-              <!-- Injected by cashier.js -->
-            </div>
-          </div>
-        </div>
+  <div id="subview-orders-history">
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <div class="segmented" role="group" aria-label="Períodu">
+        <button type="button" class="is-active" id="order-date-today" onclick="cashierApp.setOrdersDateFilter('today')"><span data-i18n="filter_today">Ohin</span></button>
+        <button type="button" id="order-date-all" onclick="cashierApp.setOrdersDateFilter('all')"><span data-i18n="filter_all">Hotu</span></button>
+      </div>
+      <select class="form-select form-select-sm w-auto" id="order-status-filter" onchange="cashierApp.filterOrdersHistory()" aria-label="Status">
+        <option value="ALL" data-i18n="filter_status_all">Status hotu</option>
+        <option value="WAITING_CASHIER_CONFIRMATION" data-i18n="status_waiting">Hein kaixa</option>
+        <option value="CONFIRMED" data-i18n="status_confirmed">Konfirmadu</option>
+        <option value="PREPARING" data-i18n="status_preparing">Tein hela</option>
+        <option value="READY" data-i18n="status_ready">Prontu</option>
+        <option value="SERVED" data-i18n="status_served">Entrega ona</option>
+        <option value="COMPLETED" data-i18n="status_completed">Remata</option>
+        <option value="REJECTED" data-i18n="status_rejected">Rekuza</option>
+      </select>
+      <div class="search-field flex-grow-1" style="min-width:200px;max-width:340px">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" id="order-history-search" class="form-control form-control-sm" placeholder="Buka meza ka kódigu" data-i18n-placeholder="search_orders_placeholder" oninput="cashierApp.filterOrdersHistory()" aria-label="Buka">
       </div>
     </div>
-
-    <!-- PANEL 2: TODAY'S ORDERS & BILLS HISTORY WITH RECEIPT PRINTING -->
-    <div class="tab-pane fade" id="orders-history-panel">
-      <div class="glass-card p-3 p-sm-4">
-        <!-- Top Sub-Navigation Switcher (Orders vs Bills & Receipts) -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10 gap-2">
-          <div class="d-flex align-items-center gap-1.5 p-1 bg-dark bg-opacity-60 rounded-pill border border-white border-opacity-10">
-            <button class="btn btn-sm rounded-pill px-3 py-1 fw-bold active btn-subtab-history" id="subtab-btn-orders" onclick="cashierApp.switchHistorySubTab('orders')">
-              <i class="fa-solid fa-list-check me-1.5 text-info"></i><span data-i18n="tab_orders_sub">📋 Pedidu</span>
-            </button>
-            <button class="btn btn-sm rounded-pill px-3 py-1 fw-bold text-white-50 btn-subtab-history" id="subtab-btn-bills" onclick="cashierApp.switchHistorySubTab('bills')">
-              <i class="fa-solid fa-receipt me-1.5 text-warning"></i><span data-i18n="tab_bills_sub">🧾 Konta &amp; Resivu</span>
-            </button>
-          </div>
-
-          <!-- Quick Refresh Button -->
-          <button class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm" onclick="cashierApp.refreshActiveHistoryTab()">
-            <i class="fa-solid fa-rotate"></i>
-            <span class="d-none d-sm-inline" data-i18n="refresh">Atualiza</span>
-          </button>
-        </div>
-
-        <!-- SUBVIEW 1: ORDERS HISTORY -->
-        <div id="subview-orders-history">
-          <!-- Filters Bar -->
-          <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-            <!-- Date Filter Toggle (Today vs All) -->
-            <div class="d-flex align-items-center gap-1">
-              <div class="btn-group btn-group-sm" role="group">
-                <button type="button" class="btn btn-sm btn-outline-secondary text-white active" id="order-date-today" onclick="cashierApp.setOrdersDateFilter('today')">
-                  <span data-i18n="filter_today">Ohin</span>
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="order-date-all" onclick="cashierApp.setOrdersDateFilter('all')">
-                  <span data-i18n="filter_all">Hotu</span>
-                </button>
-              </div>
-
-              <!-- Status Dropdown Filter -->
-              <select class="form-select form-select-sm bg-dark border-secondary text-white ms-1" id="order-status-filter" style="width: auto; font-size: 0.8rem;" onchange="cashierApp.filterOrdersHistory()">
-                <option value="ALL">Status Hotu (All)</option>
-                <option value="WAITING_CASHIER_CONFIRMATION">⏳ Hein Kaixa</option>
-                <option value="CONFIRMED">🟡 Konfirmadu</option>
-                <option value="PREPARING">🔥 Tein (Cooking)</option>
-                <option value="READY">🟢 Prontu</option>
-                <option value="SERVED">🍽️ Entrega</option>
-                <option value="COMPLETED">✅ Kompletu</option>
-                <option value="REJECTED">❌ Rekuza</option>
-              </select>
-            </div>
-
-            <!-- Search input -->
-            <div class="input-group input-group-sm ms-auto" style="max-width: 280px;">
-              <span class="input-group-text bg-dark border-secondary text-secondary"><i class="fa-solid fa-magnifying-glass"></i></span>
-              <input type="text" id="order-history-search" class="form-control bg-dark border-secondary text-white" placeholder="Buka meza, sesaun, kódigu..." data-i18n-placeholder="search_orders_placeholder" oninput="cashierApp.filterOrdersHistory()">
-            </div>
-          </div>
-
-          <!-- Orders Table -->
-          <div class="table-responsive">
-            <table class="table table-dark table-hover align-middle mb-0 small">
-              <thead>
-                <tr class="text-white-50 border-secondary">
-                  <th style="min-width: 75px;" data-i18n="th_time">Oras</th>
-                  <th style="min-width: 110px;" data-i18n="th_order_code">Kódigu Pedidu</th>
-                  <th style="min-width: 90px;" data-i18n="th_table">Meza &amp; Sesi</th>
-                  <th style="min-width: 160px;" data-i18n="th_items">Item Pedidu</th>
-                  <th style="min-width: 70px;" data-i18n="th_total">Totál ($)</th>
-                  <th style="min-width: 100px;" data-i18n="th_status">Status</th>
-                  <th class="text-end" style="min-width: 80px;" data-i18n="th_action">Asaun</th>
-                </tr>
-              </thead>
-              <tbody id="orders-history-tbody">
-                <tr>
-                  <td colspan="7" class="text-center py-4 text-white-50" data-i18n="loading_history">Karga hela dadus pedidu...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- SUBVIEW 2: BILLS & RECEIPTS HISTORY -->
-        <div id="subview-bills-history" style="display:none;">
-          <!-- Bills Header & Summary -->
-          <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-            <!-- Date Filter Toggle (Today vs All) -->
-            <div class="d-flex align-items-center gap-2">
-              <div class="btn-group btn-group-sm" role="group">
-                <button type="button" class="btn btn-sm btn-outline-secondary text-white active" id="bill-date-today" onclick="cashierApp.setBillsDateFilter('today')">
-                  <span data-i18n="filter_today">Ohin</span>
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary text-white" id="bill-date-all" onclick="cashierApp.setBillsDateFilter('all')">
-                  <span data-i18n="filter_all">Hotu</span>
-                </button>
-              </div>
-
-              <!-- Revenue Summary Badge -->
-              <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 px-2.5 py-1.5 rounded-pill fw-bold" id="bills-total-revenue-badge" style="font-size: 0.8rem;">
-                Totál: $0.00
-              </span>
-            </div>
-
-            <!-- Search input -->
-            <div class="input-group input-group-sm ms-auto" style="max-width: 280px;">
-              <span class="input-group-text bg-dark border-secondary text-secondary"><i class="fa-solid fa-magnifying-glass"></i></span>
-              <input type="text" id="bill-history-search" class="form-control bg-dark border-secondary text-white" placeholder="Buka meza ka kódigu resibu..." data-i18n-placeholder="search_bills_placeholder" oninput="cashierApp.filterBillsHistory()">
-            </div>
-          </div>
-
-          <!-- Bills Table -->
-          <div class="table-responsive">
-            <table class="table table-dark table-hover align-middle mb-0 small">
-              <thead>
-                <tr class="text-white-50 border-secondary">
-                  <th style="min-width: 85px;" data-i18n="date_time">Data / Oras</th>
-                  <th style="min-width: 120px;" data-i18n="th_bill_code">Kódigu Resibu</th>
-                  <th style="min-width: 80px;" data-i18n="th_table">Meza</th>
-                  <th style="min-width: 90px;">Metodu</th>
-                  <th style="min-width: 75px;" data-i18n="th_total">Totál</th>
-                  <th style="min-width: 110px;" data-i18n="th_tendered_change">Simu / Troku</th>
-                  <th style="min-width: 80px;" data-i18n="th_cashier">Kaixa</th>
-                  <th class="text-end" style="min-width: 95px;" data-i18n="th_action">Asaun</th>
-                </tr>
-              </thead>
-              <tbody id="bills-history-tbody">
-                <tr>
-                  <td colspan="8" class="text-center py-4 text-white-50" data-i18n="loading_history">Karga hela dadus resibu...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- PANEL 3: BILL REQUESTS FEED -->
-    <div class="tab-pane fade" id="bill-alerts-panel">
-      <div class="glass-card p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10">
-          <h5 class="fw-bold mb-0 text-danger">
-            <i class="fa-solid fa-receipt me-2"></i> <span data-i18n="bill_alerts_title">Meza Sira Ne'ebé Husu Konta (Live Bill Requests)</span>
-          </h5>
-          <span class="small text-white-50" data-i18n="bill_alerts_subtitle">Atende kedas atu bainaka labele hein kleur</span>
-        </div>
-
-        <div id="bill-alerts-container" class="row g-3">
-          <!-- Injected dynamically -->
-        </div>
-      </div>
-    </div>
-
-    <!-- PANEL 4: SHIFT CLOSE & Z-REPORT -->
-    <div class="tab-pane fade" id="shift-close-panel">
-      <div class="row g-3 justify-content-center">
-        <div class="col-lg-8 col-md-10">
-          <div class="glass-card p-4">
-            <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10">
-              <h5 class="fw-bold mb-0 text-success">
-                <i class="fa-solid fa-vault me-2"></i> <span data-i18n="z_report_title">Relatóriu Fechu Kaixa Diáriu (Z-Report)</span>
-              </h5>
-              <span class="badge bg-success bg-opacity-25 border border-success text-success px-3 py-1 rounded-pill">
-                {{ user.username|default:"Kaixa" }} &bull; Ohin
-              </span>
-            </div>
-
-            <!-- Metrics Cards -->
-            <div class="row g-3 mb-4">
-              <div class="col-md-4">
-                <div class="p-3 rounded-4 bg-dark bg-opacity-50 border border-success border-opacity-50 text-center">
-                  <small class="text-white-50 text-uppercase fw-bold" data-i18n="cash_total">Totál Osan-Maran (Cash)</small>
-                  <h3 class="fw-bold text-success mb-0 mt-1" id="shift-cash-total">$0.00</h3>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="p-3 rounded-4 bg-dark bg-opacity-50 border border-info border-opacity-50 text-center">
-                  <small class="text-white-50 text-uppercase fw-bold" data-i18n="card_total">Kartaun / Transferénsia</small>
-                  <h3 class="fw-bold text-info mb-0 mt-1" id="shift-other-total">$0.00</h3>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="p-3 rounded-4 bg-dark bg-opacity-50 border border-warning border-opacity-50 text-center">
-                  <small class="text-white-50 text-uppercase fw-bold" data-i18n="shift_revenue">Totál Rendimentu Ohin</small>
-                  <h3 class="fw-bold text-warning mb-0 mt-1" id="shift-grand-total">$0.00</h3>
-                </div>
-              </div>
-            </div>
-
-            <div class="p-3 rounded-4 bg-dark bg-opacity-30 border border-secondary border-opacity-25 mb-4">
-              <div class="d-flex justify-content-between mb-2">
-                <span class="text-white-50" data-i18n="paid_tables_count">Totál Meza ne'ebé Selu Ona:</span>
-                <strong class="text-white" id="shift-paid-sessions-count">0 Meza</strong>
-              </div>
-              <div class="d-flex justify-content-between mb-2">
-                <span class="text-white-50" data-i18n="completed_orders_count">Totál Pedidu Remata:</span>
-                <strong class="text-white" id="shift-completed-orders-count">0 Pedidu</strong>
-              </div>
-              <div class="d-flex justify-content-between">
-                <span class="text-white-50" data-i18n="report_timestamp">Data &amp; Oras Relatóriu:</span>
-                <strong class="text-white" id="shift-report-timestamp">-</strong>
-              </div>
-            </div>
-
-            <div class="d-flex gap-2 justify-content-end">
-              <button class="btn btn-outline-warning rounded-pill px-4 fw-bold" onclick="cashierApp.printShiftReport()">
-                <i class="fa-solid fa-print me-2"></i> <span data-i18n="print_z_report">Imprime Relatóriu Fechu Kaixa (80mm)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-</div>
-
-<!-- Open Session Modal -->
-<div class="modal fade" id="openSessionModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content glass-card border-warning border-opacity-50">
-      <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title fw-bold text-white"><i class="fa-solid fa-door-open text-warning me-1"></i> <span data-i18n="open_session_modal_title">Loke Sesi Meza</span></h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-3">
-        <p class="text-white-50 small"><span data-i18n="open_session_for">Loke sesi meza foun ba:</span> <strong id="open-session-table-name" class="text-warning"></strong></p>
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-white" data-i18n="guest_count_label">Totál Bainaka (Guest Count):</label>
-          <input type="number" class="form-control bg-dark border-secondary text-white" id="open-session-guests" value="2" min="1" max="25">
-        </div>
-        <button type="button" class="btn btn-warning w-100 fw-bold rounded-pill text-dark shadow" onclick="cashierApp.submitOpenSession()">
-          <i class="fa-solid fa-circle-check me-1"></i> <span data-i18n="btn_confirm_open">Konfirma Loke Sesi</span>
-        </button>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table table-app table-hover table-stack">
+          <thead>
+            <tr>
+              <th data-i18n="th_time">Oras</th>
+              <th data-i18n="th_order_code">Kódigu</th>
+              <th data-i18n="th_table">Meza</th>
+              <th data-i18n="th_items">Item</th>
+              <th class="text-end" data-i18n="th_total">Totál</th>
+              <th data-i18n="th_status">Status</th>
+              <th class="text-end"><span class="visually-hidden" data-i18n="th_action">Asaun</span></th>
+            </tr>
+          </thead>
+          <tbody id="orders-history-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
-</div>
 
-<!-- Reject Order Modal -->
-<div class="modal fade" id="rejectOrderModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content glass-card border-danger border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h5 class="modal-title fw-bold text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i> <span data-i18n="reject_modal_title">Razaun Rekuza Pedidu</span> <span id="reject-order-code"></span></h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+  <div id="subview-bills-history" hidden>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div class="segmented" role="group" aria-label="Períodu">
+        <button type="button" class="is-active" id="bill-date-today" onclick="cashierApp.setBillsDateFilter('today')"><span data-i18n="filter_today">Ohin</span></button>
+        <button type="button" id="bill-date-all" onclick="cashierApp.setBillsDateFilter('all')"><span data-i18n="filter_all">Hotu</span></button>
       </div>
-      <div class="modal-body p-4">
-        <p class="text-white-50 small mb-3" data-i18n="reject_modal_desc">Pedidu ne'ebé rekuza sei la haruka ba dapur. Fó razaun rekuza ne'ebé klaru:</p>
-        <div class="mb-3">
-          <label class="form-label fw-bold small text-white" data-i18n="reject_reason_label">Razaun Rekuza (Obrigatóriu):</label>
-          <textarea class="form-control bg-dark border-secondary text-white" id="reject-reason-input" rows="3" placeholder="Ezemplu: Bainaka la iha meza / pedidu falsu" data-i18n-placeholder="reject_reason_placeholder"></textarea>
-        </div>
-        <div class="d-flex justify-content-end gap-2">
-          <button type="button" class="btn btn-outline-secondary rounded-pill px-3" data-bs-dismiss="modal" data-i18n="cancel">Kansela</button>
-          <button type="button" class="btn btn-danger rounded-pill px-4 fw-bold shadow" onclick="cashierApp.submitRejectOrder()" data-i18n="btn_confirm_reject">Konfirma Rekuza</button>
-        </div>
+      <span class="badge-soft tone-success tabular" id="bills-total-revenue-badge">$0.00</span>
+      <div class="search-field flex-grow-1" style="min-width:200px;max-width:340px">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" id="bill-history-search" class="form-control form-control-sm" placeholder="Buka meza ka resibu" data-i18n-placeholder="search_bills_placeholder" oninput="cashierApp.filterBillsHistory()" aria-label="Buka">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table table-app table-hover table-stack">
+          <thead>
+            <tr>
+              <th data-i18n="date_time">Data</th>
+              <th data-i18n="th_bill_code">Resibu</th>
+              <th data-i18n="th_table">Meza</th>
+              <th data-i18n="payment_method_short">Metodu</th>
+              <th class="text-end" data-i18n="th_total">Totál</th>
+              <th class="text-end" data-i18n="th_tendered_change">Simu / Troku</th>
+              <th data-i18n="th_cashier">Kaixa</th>
+              <th class="text-end"><span class="visually-hidden" data-i18n="th_action">Asaun</span></th>
+            </tr>
+          </thead>
+          <tbody id="bills-history-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- POS Cash Payment Checkout Modal -->
-<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content glass-card border-primary border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h5 class="modal-title fw-bold text-white d-flex align-items-center">
-          <i class="fa-solid fa-cash-register text-warning me-2"></i>
-          <span><span data-i18n="pos_modal_title">Pagamentu Kaixa POS</span> &bull; <span id="pos-table-name" class="text-warning"></span></span>
-        </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        
-        <div class="row g-3 mb-3">
-          <!-- Left: Itemized Order Details Breakdown -->
-          <div class="col-md-6">
-            <label class="form-label fw-bold small text-white-50 text-uppercase mb-1">
-              <i class="fa-solid fa-list-check text-warning me-1"></i> <span data-i18n="order_items_breakdown">Detalle Item Pedidu:</span>
-            </label>
-            <div class="border border-secondary border-opacity-50 rounded-4 p-2 bg-dark bg-opacity-50 overflow-auto" id="pos-order-items-container" style="max-height: 280px;">
-              <!-- Dynamic order items list injected by cashier.js -->
-            </div>
-          </div>
-
-          <!-- Right: Payment Calculation -->
-          <div class="col-md-6">
-            <div class="p-3 bg-dark bg-opacity-60 rounded-4 mb-3 text-center border border-secondary border-opacity-50">
-              <small class="text-white-50 text-uppercase fw-bold" data-i18n="remaining_bill">Totál Konta (Remaining Bill)</small>
-              <div class="fs-1 fw-bold text-warning" id="pos-bill-total">$0.00</div>
-              <small class="text-white-50" id="pos-paid-status"></small>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-white" data-i18n="payment_method">Metodu Pagamentu:</label>
-              <select class="form-select bg-dark border-secondary text-white" id="pos-payment-method">
-                <option value="CASH" selected data-i18n="method_cash">💵 Osan-Maran (Cash USD)</option>
-                <option value="MANUAL_OTHER" data-i18n="method_card">💳 Kartaun / Transferénsia Manuál</option>
-              </select>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-white" data-i18n="tendered_label">Osan Simu (Tendered Cash $):</label>
-              <input type="number" step="0.01" class="form-control fs-5 fw-bold bg-dark border-secondary text-white" id="pos-tendered-amount" oninput="cashierApp.calculateChange()">
-              
-              <!-- Quick Cash Bills -->
-              <div class="d-flex gap-2 mt-2 flex-wrap">
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="cashierApp.setTenderedAmount(5)">$5</button>
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="cashierApp.setTenderedAmount(10)">$10</button>
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="cashierApp.setTenderedAmount(20)">$20</button>
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="cashierApp.setTenderedAmount(50)">$50</button>
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="cashierApp.setTenderedAmount(100)">$100</button>
-              </div>
-            </div>
-
-            <div class="p-2 bg-dark bg-opacity-75 rounded-3 mb-3 d-flex justify-content-between align-items-center border border-secondary border-opacity-50">
-              <span class="fw-bold small text-white" data-i18n="change_label">Osan Fila (Change):</span>
-              <span class="fs-4 fw-bold text-success" id="pos-change-amount">$0.00</span>
-            </div>
-
-            <button type="button" class="btn btn-success w-100 py-3 rounded-pill fw-bold fs-5 shadow" id="btn-submit-payment" onclick="cashierApp.processPayment()">
-              <i class="fa-solid fa-check-circle me-1"></i> <span data-i18n="btn_finish_payment">Kompleta Pagamentu</span>
-            </button>
-          </div>
-        </div>
-
-      </div>
+<!-- Shift close -->
+<section class="app-panel" id="shift-close-panel" aria-labelledby="shift-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="shift-title" data-i18n="z_report_title">Fechu kaixa (Z-report)</h1>
+      <p class="page-subtitle">{{ user.get_full_name }} &middot; <span id="shift-report-timestamp">-</span></p>
     </div>
+    <button type="button" class="btn btn-primary" onclick="cashierApp.printShiftReport()"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="print_z_report">Imprime</span></button>
   </div>
-</div>
 
-<!-- Receipt Modal -->
-<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content glass-card border-warning border-opacity-40">
-      <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title fw-bold text-white"><i class="fa-solid fa-receipt text-warning me-1"></i> <span data-i18n="receipt_title">Resibu Pagamentu</span></h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-3 text-center" id="receipt-print-content"></div>
-      <div class="modal-footer border-0 pt-0">
-        <button type="button" class="btn btn-warning text-dark w-100 fw-bold rounded-pill shadow" onclick="cashierApp.printCurrentReceipt()">
-          <i class="fa-solid fa-print me-1"></i> <span data-i18n="btn_print_receipt_one_page">Print Resibu (1 Folha)</span>
-        </button>
-      </div>
-    </div>
+  <div class="kpi-grid mb-3" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="kpi"><div class="kpi-label" data-i18n="cash_total">Osan-maran</div><div class="kpi-value" id="shift-cash-total">$0.00</div></div>
+    <div class="kpi"><div class="kpi-label" data-i18n="card_total">Kartaun / transferénsia</div><div class="kpi-value" id="shift-other-total">$0.00</div></div>
+    <div class="kpi"><div class="kpi-label" data-i18n="shift_revenue">Totál ohin</div><div class="kpi-value text-accent" id="shift-grand-total">$0.00</div></div>
   </div>
-</div>
+
+  <div class="surface surface-pad" style="max-width:560px">
+    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="paid_tables_count">Meza selu ona</span><strong class="tabular" id="shift-paid-sessions-count">0</strong></div>
+    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="completed_orders_count">Pedidu remata</span><strong class="tabular" id="shift-completed-orders-count">0</strong></div>
+    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="payments_count">Transasaun</span><strong class="tabular" id="shift-payments-count">0</strong></div>
+  </div>
+</section>
 {% endblock %}
 
-{% block extra_css %}
-<style>
-  body.cashier-dark-body {
-    background: #070b14;
-    color: #f8fafc;
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  }
-  .glass-card {
-    background: rgba(14, 18, 30, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 1.25rem;
-    color: #ffffff;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  }
-  .nav-pills .nav-link {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 0.2s ease;
-  }
-  .nav-pills .nav-link.active {
-    background: linear-gradient(135deg, #f97316, #ea580c) !important;
-    border-color: #f97316 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  .btn-subtab-history {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .btn-subtab-history.active {
-    background: linear-gradient(135deg, #f97316, #ea580c) !important;
-    color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  }
-</style>
+{% block overlays %}
+<!-- Open session -->
+<div class="modal fade modal-sheet" id="openSessionModal" tabindex="-1" aria-labelledby="openSessionTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
+    <form class="modal-content" onsubmit="event.preventDefault(); cashierApp.submitOpenSession();">
+      <div class="modal-header">
+        <h2 class="modal-title" id="openSessionTitle"><span data-i18n="open_session_modal_title">Loke sesaun</span> &middot; <span id="open-session-table-name"></span></h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="open-session-guests" data-i18n="guest_count_label">Totál bainaka</label>
+        <input type="number" inputmode="numeric" class="form-control" id="open-session-guests" value="2" min="1" max="25" required>
+        <div class="form-text" data-i18n="guest_count_hint">Entre 1 no 25.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary"><span data-i18n="btn_confirm_open">Loke sesaun</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Payment -->
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="paymentTitle"><span data-i18n="pos_modal_title">Pagamentu</span> &middot; <span id="pos-table-name"></span></h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6 order-2 order-md-1">
+            <div class="form-label" data-i18n="order_items_breakdown">Item pedidu</div>
+            <div class="surface-muted p-2" id="pos-order-items-container" style="max-height:320px;overflow-y:auto"></div>
+          </div>
+          <div class="col-md-6 order-1 order-md-2">
+            <div class="pay-total mb-3">
+              <div class="kpi-label" data-i18n="remaining_bill">Totál atu selu</div>
+              <div class="pay-total-value" id="pos-bill-total">$0.00</div>
+              <div class="fs-7 text-tertiary" id="pos-paid-status"></div>
+            </div>
+
+            <label class="form-label" for="pos-payment-method" data-i18n="payment_method">Metodu pagamentu</label>
+            <select class="form-select mb-3" id="pos-payment-method" onchange="cashierApp.onMethodChange()">
+              <option value="CASH" selected data-i18n="method_cash">Osan-maran (USD)</option>
+              <option value="MANUAL_OTHER" data-i18n="method_card">Kartaun / transferénsia</option>
+            </select>
+
+            <div id="pos-cash-fields">
+              <label class="form-label" for="pos-tendered-amount" data-i18n="tendered_label">Osan simu ($)</label>
+              <input type="number" inputmode="decimal" step="0.01" min="0" class="form-control form-control-lg tabular fw-bold" id="pos-tendered-amount" oninput="cashierApp.calculateChange()">
+              <div class="quick-cash mt-2" role="group" aria-label="Osan lais">
+                <button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.setTenderedAmount(5)">$5</button>
+                <button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.setTenderedAmount(10)">$10</button>
+                <button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.setTenderedAmount(20)">$20</button>
+                <button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.setTenderedAmount(50)">$50</button>
+                <button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.setTenderedAmount(100)">$100</button>
+              </div>
+              <div class="change-row mt-3" id="pos-change-row">
+                <span class="fw-semibold" data-i18n="change_label">Troku</span>
+                <span class="fs-5 fw-800 tabular" id="pos-change-amount">$0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="button" class="btn btn-primary btn-lg flex-grow-1 flex-md-grow-0" id="btn-submit-payment" onclick="cashierApp.processPayment()">
+          <i class="fa-solid fa-check" aria-hidden="true"></i><span data-i18n="btn_finish_payment">Kompleta pagamentu</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down" style="max-width:420px">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="receiptTitle" data-i18n="receipt_title">Resibu</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body" id="receipt-print-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="close">Taka</span></button>
+        <button type="button" class="btn btn-primary" onclick="cashierApp.printCurrentReceipt()"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="btn_print">Imprime</span></button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<script>
+  window.CELVASS_RESTAURANT = {
+    name: "{{ current_restaurant.name|escapejs }}",
+    address: "{{ current_restaurant.address|default:''|escapejs }}",
+    phone: "{{ current_restaurant.phone|default:''|escapejs }}",
+  };
+</script>
 <script src="{% static 'js/cashier.js' %}"></script>
 <script>
   const cashierApp = new CashierApp();

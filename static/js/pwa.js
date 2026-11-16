@@ -1,139 +1,108 @@
 /**
- * Celvass Resto & Bar PWA Installation & Service Worker Controller
+ * Service worker registration and install prompt.
+ * The install banner is shown only when the browser offers installation (or on iOS Safari,
+ * which needs manual steps) and the user has not dismissed it in the last 7 days.
  */
+(function () {
+  'use strict';
 
-let deferredPrompt = null;
+  const DISMISS_KEY = 'celvass_pwa_dismissed';
+  const DISMISS_MS = 7 * 24 * 3600 * 1000;
+  let deferredPrompt = null;
 
-// Register Service Worker
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .then((reg) => {
-        console.log('✅ Celvass PWA: Service Worker registered. Scope:', reg.scope);
-      })
-      .catch((err) => {
-        console.warn('⚠️ Celvass PWA: Service Worker registration failed:', err);
-      });
-  });
-}
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const recentlyDismissed = () => {
+    const ts = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+    return Date.now() - ts < DISMISS_MS;
+  };
+  const isStaffPage = () => ['admin', 'cashier', 'kitchen'].includes(document.body?.dataset.role);
 
-// Capture BeforeInstallPrompt
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  console.log('📱 Celvass PWA: beforeinstallprompt captured!');
-  showPwaInstallUI();
-});
-
-// Proactively check and display install UI after load if not in standalone mode
-window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    if (!isStandalone) {
-      showPwaInstallUI();
-    }
-  }, 1200);
-});
-
-// App installed event
-window.addEventListener('appinstalled', () => {
-  console.log('🎉 Celvass PWA was installed successfully!');
-  deferredPrompt = null;
-  const banner = document.getElementById('pwa-install-banner');
-  if (banner) banner.style.display = 'none';
-  if (window.showToast) {
-    showToast('Aplikasaun Celvass PWA instala ona iha ita-boot nia smartphone!', 'success');
+  function banner() {
+    return document.getElementById('pwa-install-banner');
   }
-});
 
-function showPwaInstallUI() {
-  const dismissedTime = localStorage.getItem('celvass_pwa_dismissed');
-  if (dismissedTime && (Date.now() - parseInt(dismissedTime, 10)) < 3600000 * 12) {
-    // Dismissed within last 12 hours, keep banner hidden but navbar button visible
-    return;
+  function showBanner() {
+    if (isStandalone() || recentlyDismissed() || isStaffPage()) return;
+    banner()?.classList.add('is-visible');
   }
-  const banner = document.getElementById('pwa-install-banner');
-  if (banner) {
-    banner.style.display = 'block';
-  }
-}
 
-function dismissPwaBanner() {
-  localStorage.setItem('celvass_pwa_dismissed', Date.now().toString());
-  const banner = document.getElementById('pwa-install-banner');
-  if (banner) {
-    banner.style.display = 'none';
+  function hideBanner() {
+    banner()?.classList.remove('is-visible');
   }
-}
 
-function installPWA() {
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult) => {
-      if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted PWA installation prompt');
-      } else {
-        console.log('User dismissed PWA installation prompt');
-      }
-      deferredPrompt = null;
-      const banner = document.getElementById('pwa-install-banner');
-      if (banner) banner.style.display = 'none';
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => console.warn('SW registration failed', err));
     });
-  } else {
-    // If native prompt is not available, show guide modal (iOS Safari / Android guide)
-    showPwaGuideModal();
   }
-}
 
-function showPwaGuideModal() {
-  let modalEl = document.getElementById('pwaGuideModal');
-  if (!modalEl) {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const modalHtml = `
-      <div class="modal fade" id="pwaGuideModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-          <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-            <div class="modal-header bg-dark text-white border-0 py-3">
-              <div class="d-flex align-items-center gap-2">
-                <i class="fa-solid fa-mobile-screen-button text-warning fs-5"></i>
-                <h5 class="modal-title fw-bold">Instala Celvass PWA</h5>
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    hideBanner();
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (isIOS() && !isStandalone()) setTimeout(showBanner, 1500);
+  });
+
+  function dismissPwaBanner() {
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    hideBanner();
+  }
+
+  function installPWA() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.finally(() => {
+        deferredPrompt = null;
+        hideBanner();
+      });
+      return;
+    }
+    showGuide();
+  }
+
+  function showGuide() {
+    let el = document.getElementById('pwaGuideModal');
+    if (!el) {
+      const tr = (k, f) => (typeof t === 'function' && t(k) !== k ? t(k) : f);
+      const steps = isIOS()
+        ? [tr('pwa_ios_step1', 'Hanehan butaun Share iha Safari.'), tr('pwa_ios_step2', 'Hili "Add to Home Screen".')]
+        : [tr('pwa_android_step1', 'Loke menu browser (⋮).'), tr('pwa_android_step2', 'Hili "Install app" ka "Add to Home screen".')];
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <div class="modal fade modal-sheet" id="pwaGuideModal" tabindex="-1" aria-labelledby="pwaGuideTitle" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
+            <div class="modal-content">
+              <div class="modal-body p-4">
+                <h2 class="modal-title mb-3" id="pwaGuideTitle"></h2>
+                <ol class="steps mb-0"></ol>
               </div>
-              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4 text-center">
-              <img src="/static/icons/icon-192.png" width="72" height="72" class="rounded-3 shadow-sm mb-3" alt="Celvass App">
-              <h6 class="fw-bold mb-2">Asesu Lais & Menus Offline</h6>
-              <p class="text-muted small mb-4">Aplikasaun ne'e bele instala direta iha ita-boot nia smartphone sem presiza Play Store ka App Store.</p>
-              
-              <div class="text-start bg-light rounded-3 p-3 mb-3 border">
-                ${isIOS ? `
-                  <div class="fw-bold small text-primary mb-2"><i class="fa-brands fa-apple me-1"></i> Dalan ba iPhone / iPad (Safari):</div>
-                  <ol class="small text-secondary mb-0 ps-3">
-                    <li class="mb-1">Klike butaun <strong>Fahe (Share)</strong> <i class="fa-solid fa-arrow-up-from-bracket text-primary"></i> iha kraik Safari.</li>
-                    <li>Scroll ba kraik no hili <strong>"Add to Home Screen"</strong> (Aumenta ba Ekrã Prinsipál).</li>
-                  </ol>
-                ` : `
-                  <div class="fw-bold small text-primary mb-2"><i class="fa-brands fa-android me-1"></i> Dalan ba Android (Chrome) / Laptop:</div>
-                  <ol class="small text-secondary mb-0 ps-3">
-                    <li class="mb-1">Klike menu pontu tolu <strong>[⋮]</strong> iha leten liman loos browser.</li>
-                    <li>Hili <strong>"Install app"</strong> ka <strong>"Tambahkan ke Layar Utama"</strong>.</li>
-                  </ol>
-                `}
-              </div>
-              <button type="button" class="btn btn-primary w-100 py-2 rounded-pill fw-bold" data-bs-dismiss="modal">Entende Ona</button>
+              <div class="modal-footer"><button type="button" class="btn btn-primary w-100" data-bs-dismiss="modal"></button></div>
             </div>
           </div>
-        </div>
-      </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    modalEl = document.getElementById('pwaGuideModal');
+        </div>`;
+      document.body.appendChild(wrap.firstElementChild);
+      el = document.getElementById('pwaGuideModal');
+      el.querySelector('#pwaGuideTitle').textContent = tr('install_pwa_text', 'Instala aplikasaun');
+      el.querySelector('.modal-footer .btn').textContent = tr('understood', 'Entende ona');
+      const list = el.querySelector('ol');
+      steps.forEach((s) => {
+        const li = document.createElement('li');
+        li.textContent = s;
+        list.appendChild(li);
+      });
+    }
+    bootstrap.Modal.getOrCreateInstance(el).show();
   }
-  const modal = new bootstrap.Modal(modalEl);
-  modal.show();
-}
 
-// Expose globally
-window.installPWA = installPWA;
-window.dismissPwaBanner = dismissPwaBanner;
+  window.installPWA = installPWA;
+  window.dismissPwaBanner = dismissPwaBanner;
+})();

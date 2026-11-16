@@ -1,23 +1,48 @@
-from django.shortcuts import render, redirect, get_object_or_404
+import secrets
+
+from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.conf import settings
+from django.http import Http404
+
 from apps.accounts.permissions import role_required
 from apps.accounts.models import Role
-from apps.tables.models import RestaurantTable, TableSession, SessionStatus
 from apps.tables.selectors import get_table_by_qr_token, get_active_session_for_table, list_tables_with_status
+from apps.tables.device import (
+    DEVICE_COOKIE, extract_device_token, is_device_authorized, claim_session_if_unclaimed,
+)
 from apps.catalog.selectors import get_categories, get_categories_with_counts, get_all_menu_items
 from apps.ordering.models import Order
 from apps.reporting.selectors import get_dashboard_metrics
 from apps.audit.selectors import get_recent_audit_events
 
+DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+
+def _attach_device_cookie(request, response, device_token):
+    """Persist the device id as an httpOnly cookie so page scripts cannot read or change it."""
+    response.set_cookie(
+        DEVICE_COOKIE,
+        device_token,
+        max_age=DEVICE_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite='Lax',
+        secure=request.is_secure(),
+    )
+    return response
+
+
+def _resolve_device_token(request):
+    token = extract_device_token(request)
+    if token:
+        return token
+    return secrets.token_urlsafe(24)
+
 
 def customer_dine_in_view(request, qr_token=None):
     """
-    Public customer dine-in view — requires a valid QR token to access a table.
-    Enforces strict device-locking: only the device that opened/joined the active session
-    can order or view the table session. Foreign devices are blocked with occupied_locked.html.
+    Customer menu for a table. Only the device that claimed the active session may use it;
+    other devices (including devices without an id) see the occupied page.
     """
-    # Root URL without a QR token → show neutral landing page only
     if not qr_token:
         return render(request, 'customer/landing.html')
 
@@ -25,43 +50,47 @@ def customer_dine_in_view(request, qr_token=None):
     if not table or not table.is_active:
         return render(request, 'customer/invalid_qr.html', status=404)
 
+    device_token = _resolve_device_token(request)
     session = get_active_session_for_table(table)
-    categories = get_categories(active_only=True)
+    is_staff_preview = request.user.is_authenticated
 
-    # Extract device token from cookie, header, or query
-    device_token = (
-        request.COOKIES.get('celvass_device_id') or
-        request.headers.get('X-Device-Token') or
-        request.GET.get('device_id')
-    )
+    if session and not is_staff_preview:
+        # Staff opening the table link from a portal only preview it: they never claim
+        # the device lock, otherwise the real guest would be locked out.
+        if not is_device_authorized(session, device_token):
+            response = render(request, 'customer/occupied_locked.html', {
+                'table': table,
+                'session': session,
+            }, status=403)
+            return _attach_device_cookie(request, response, device_token)
+        claim_session_if_unclaimed(session, device_token)
 
-    # If session is active, verify device lock
-    if session:
-        if session.primary_device_token:
-            # Table is locked to a device
-            if device_token and device_token != session.primary_device_token:
-                # Different device trying to access active table
-                return render(request, 'customer/occupied_locked.html', {
-                    'table': table,
-                    'session': session,
-                }, status=403)
-        elif device_token:
-            # First device to access active session claims it
-            session.primary_device_token = device_token
-            session.authorized_device_tokens = [device_token]
-            session.save(update_fields=['primary_device_token', 'authorized_device_tokens'])
-
-    return render(request, 'customer/index.html', {
+    response = render(request, 'customer/index.html', {
         'table': table,
         'session': session,
         'qr_token': qr_token,
-        'categories': categories,
+        'categories': get_categories(active_only=True),
     })
+    return _attach_device_cookie(request, response, device_token)
 
 
 def customer_tracker_view(request, qr_token, order_code):
     table = get_table_by_qr_token(qr_token)
-    order = get_object_or_404(Order, order_code=order_code)
+    if not table:
+        raise Http404("Meza la hetan.")
+
+    order = get_object_or_404(
+        Order.objects.select_related('table_session__table'),
+        order_code=order_code,
+        table_session__table=table,
+    )
+
+    device_token = extract_device_token(request)
+    if not is_device_authorized(order.table_session, device_token):
+        return render(request, 'customer/occupied_locked.html', {
+            'table': table,
+            'session': order.table_session,
+        }, status=403)
 
     return render(request, 'customer/tracker.html', {
         'table': table,
@@ -73,11 +102,9 @@ def customer_tracker_view(request, qr_token, order_code):
 @login_required
 @role_required([Role.CASHIER, Role.ADMIN])
 def cashier_portal_view(request):
-    tables = list_tables_with_status()
-    categories = get_categories(active_only=True)
     return render(request, 'cashier/dashboard.html', {
-        'tables': tables,
-        'categories': categories,
+        'tables': list_tables_with_status(),
+        'categories': get_categories(active_only=True),
     })
 
 
@@ -90,28 +117,27 @@ def kitchen_portal_view(request):
 @login_required
 @role_required([Role.ADMIN])
 def admin_portal_view(request):
-    metrics = get_dashboard_metrics()
+    categories = list(get_categories_with_counts(active_only=False))
     menu_items = get_all_menu_items()
-    categories = get_categories_with_counts(active_only=False)
-    tables = list_tables_with_status()
-    audit_events = get_recent_audit_events(limit=50)
+
+    from apps.accounts.models import User
 
     return render(request, 'admin_custom/dashboard.html', {
-        'metrics': metrics,
+        'metrics': get_dashboard_metrics(),
         'menu_items': menu_items,
         'categories': categories,
-        'tables': tables,
-        'audit_events': audit_events,
+        'active_category_count': sum(1 for c in categories if c.is_active),
+        'tables': list_tables_with_status(),
+        'audit_events': get_recent_audit_events(limit=50),
+        'staff_users': User.objects.order_by('role', 'username'),
     })
 
 
 @login_required
 @role_required([Role.ADMIN])
 def qr_print_sheet_view(request):
-    tables = list_tables_with_status()
     return render(request, 'admin_custom/qr_sheet.html', {
-        'tables': tables,
+        'tables': list_tables_with_status(),
         'host': request.get_host(),
         'scheme': request.scheme,
     })
-

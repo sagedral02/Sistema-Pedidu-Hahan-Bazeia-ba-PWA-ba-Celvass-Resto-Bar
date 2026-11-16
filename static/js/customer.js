@@ -1,128 +1,178 @@
 /**
- * Celvass Resto & Bar — Customer Dine-In PWA Controller
- * Pure Tetun Base Interface & Dynamic Multilingual System
- * Luxury Dark Glassmorphism & Device-Locked Table Security
+ * Customer dine-in controller: menu filtering, cart, order submission, order status and bill request.
+ *
+ * Device lock: the server issues an httpOnly device cookie when the table page loads. The browser
+ * sends it automatically with every same-origin request, so this script never handles the id.
+ * Prices shown here are for display only; the server recalculates every order.
  */
+
+const ORDER_STATUS = {
+  WAITING_CASHIER_CONFIRMATION: { cls: 'status-waiting', key: 'status_waiting' },
+  CONFIRMED: { cls: 'status-confirmed', key: 'status_confirmed' },
+  PREPARING: { cls: 'status-preparing', key: 'status_preparing' },
+  READY: { cls: 'status-ready', key: 'status_ready' },
+  SERVED: { cls: 'status-served', key: 'status_served' },
+  COMPLETED: { cls: 'status-completed', key: 'status_completed' },
+  REJECTED: { cls: 'status-rejected', key: 'status_rejected' },
+  CANCELLED: { cls: 'status-cancelled', key: 'status_cancelled' },
+};
+
+// Must match apps/tables/services.request_bill_for_session.
+const COOKING_STATUSES = ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING'];
 
 class CustomerApp {
   constructor(config) {
-    this.sessionToken = config.sessionToken;
-    this.qrToken = config.qrToken;
-    this.tableCode = config.tableCode;
-    this.tableName = config.tableName;
-    this.deviceId = this.getOrCreateDeviceId();
-    this.storageKey = `resto_cart_${this.sessionToken || 'default'}`;
+    this.sessionToken = config.sessionToken || '';
+    this.sessionActive = Boolean(config.sessionActive);
+    this.qrToken = config.qrToken || '';
+    this.tableCode = config.tableCode || '';
+    this.tableName = config.tableName || '';
+    this.defaultImage = config.defaultImage || '/static/icons/default-food.png';
+
+    this.storageKey = `celvass_cart_${this.sessionToken || this.qrToken || 'default'}`;
     this.cart = this.loadCart();
-    this.selectedItem = null;
     this.activeOrders = [];
     this.lastOrdersJson = null;
     this.sessionWatchTimer = null;
     this.isSessionOpening = false;
+    this.activeCategory = 'all';
+    this.modalItem = null;
+    this.modalQty = 1;
 
     this.init();
   }
 
-  getOrCreateDeviceId() {
-    let id = localStorage.getItem('celvass_device_id');
-    if (!id) {
-      id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev_' + Math.random().toString(36).substring(2) + Date.now().toString(36));
-      localStorage.setItem('celvass_device_id', id);
-    }
-    // Also store in cookie for server-side verification
-    document.cookie = `celvass_device_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
-    return id;
-  }
-
+  // ------------------------------------------------------------------
+  // Setup
+  // ------------------------------------------------------------------
   init() {
-    // If table has no active session, initiate automatic cashier activation verification
-    if (!this.sessionToken && this.qrToken) {
-      this.startActivationFlow();
-    }
+    if (!this.sessionToken && this.qrToken) this.startActivationFlow();
 
-    // Ensure mobile table badge in dock has the table code
-    const mobileTableBadge = document.getElementById('dock-table-name-mobile');
-    if (mobileTableBadge) {
-      if (this.tableCode) {
-        mobileTableBadge.textContent = this.tableCode;
-      }
-    }
-
+    this.bindMenu();
+    this.bindItemModal();
     this.renderCartUI();
     this.initWebSocket();
     this.loadActiveOrders();
+    this.checkBillButtonEligibility();
 
-    // Listen for language switch
     window.addEventListener('languageChanged', () => {
       this.renderCartUI();
       this.renderOrdersUI();
       this.checkBillButtonEligibility();
     });
+  }
 
-
-    // Category Filter
-    document.querySelectorAll('.cat-pill').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.cat-pill').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        const cat = String(btn.dataset.category || btn.getAttribute('data-category') || '').trim();
-        document.querySelectorAll('.menu-item-col').forEach((card) => {
-          const cardCat = String(card.dataset.category || card.getAttribute('data-category') || '').trim();
-          if (cat === 'all' || cardCat === cat) {
-            card.style.display = 'block';
-          } else {
-            card.style.display = 'none';
-          }
-        });
-      });
+  bindMenu() {
+    document.querySelectorAll('.chip[data-category]').forEach((chip) => {
+      chip.addEventListener('click', () => this.setCategory(chip.dataset.category));
     });
 
-    // Search bar
-    const searchInput = document.getElementById('menu-search');
-    const dockSearchInput = document.getElementById('dock-search-input');
-
-    const applySearch = (q) => {
-      document.querySelectorAll('.menu-item-col').forEach((card) => {
-        const name = (card.dataset.name || '').toLowerCase();
-        const desc = (card.dataset.desc || '').toLowerCase();
-        if (!q || name.includes(q) || desc.includes(q)) {
-          card.style.display = 'block';
-        } else {
-          card.style.display = 'none';
+    const search = document.getElementById('menu-search');
+    if (search) {
+      search.addEventListener('input', () => this.applyFilters());
+      search.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          search.value = '';
+          this.applyFilters();
         }
-      });
-    };
-
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase().trim();
-        if (dockSearchInput && dockSearchInput.value !== e.target.value) {
-          dockSearchInput.value = e.target.value;
-        }
-        applySearch(q);
       });
     }
 
-    if (dockSearchInput) {
-      dockSearchInput.addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase().trim();
-        if (searchInput && searchInput.value !== e.target.value) {
-          searchInput.value = e.target.value;
-        }
-        applySearch(q);
-        const grid = document.getElementById('menu-grid');
-        if (grid && window.scrollY < 200) {
-          grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
-      dockSearchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closeDockSearch();
-        }
+    const grid = document.getElementById('menu-grid');
+    if (grid) {
+      grid.addEventListener('click', (e) => {
+        const card = e.target.closest('.menu-card');
+        if (card) this.handleCardClick(card);
       });
     }
   }
 
+  setCategory(slug) {
+    this.activeCategory = slug || 'all';
+    document.querySelectorAll('.chip[data-category]').forEach((chip) => {
+      const active = chip.dataset.category === this.activeCategory;
+      chip.classList.toggle('active', active);
+      chip.setAttribute('aria-pressed', String(active));
+      if (active) chip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    });
+    this.applyFilters();
+  }
+
+  applyFilters() {
+    const q = (document.getElementById('menu-search')?.value || '').toLowerCase().trim();
+    let visible = 0;
+    document.querySelectorAll('.menu-item-col').forEach((col) => {
+      const matchCat = this.activeCategory === 'all' || col.dataset.category === this.activeCategory;
+      const matchQ = !q || (col.dataset.name || '').includes(q) || (col.dataset.desc || '').includes(q);
+      const show = matchCat && matchQ;
+      col.hidden = !show;
+      if (show) visible += 1;
+    });
+    const empty = document.getElementById('menu-empty');
+    if (empty) empty.hidden = visible > 0;
+  }
+
+  handleCardClick(card) {
+    if (card.dataset.available !== '1') {
+      showToast(t('sold_out'), 'info');
+      return;
+    }
+    if (!this.sessionActive) {
+      this.requestTableActivation(true);
+      showToast(t('session_not_open_toast'), 'warning');
+      return;
+    }
+    this.openItemModal({
+      id: card.dataset.itemId,
+      name: card.dataset.itemName,
+      price: parseFloat(card.dataset.itemPrice) || 0,
+      image: card.dataset.itemImage || this.defaultImage,
+      desc: card.dataset.itemDesc || '',
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Item modal
+  // ------------------------------------------------------------------
+  bindItemModal() {
+    const addBtn = document.getElementById('btn-add-modal-item');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        if (!this.modalItem) return;
+        const note = (document.getElementById('modal-item-note')?.value || '').trim();
+        this.addToCart(this.modalItem, this.modalQty, note);
+        bootstrap.Modal.getInstance(document.getElementById('itemCustomModal'))?.hide();
+      });
+    }
+    window.adjustModalQty = (delta) => {
+      this.modalQty = Math.min(50, Math.max(1, this.modalQty + delta));
+      this.renderModalQty();
+    };
+  }
+
+  openItemModal(item) {
+    this.modalItem = item;
+    this.modalQty = 1;
+    document.getElementById('modal-item-name').textContent = item.name;
+    document.getElementById('modal-item-price').textContent = formatMoney(item.price);
+    const desc = document.getElementById('modal-item-desc');
+    desc.textContent = item.desc;
+    desc.hidden = !item.desc;
+    document.getElementById('modal-item-note').value = '';
+    document.getElementById('modal-item-img').src = item.image || this.defaultImage;
+    this.renderModalQty();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('itemCustomModal')).show();
+  }
+
+  renderModalQty() {
+    document.getElementById('modal-item-qty').textContent = this.modalQty;
+    const total = document.getElementById('modal-item-total');
+    if (total && this.modalItem) total.textContent = `· ${formatMoney(this.modalItem.price * this.modalQty)}`;
+  }
+
+  // ------------------------------------------------------------------
+  // Table activation (session not open yet)
+  // ------------------------------------------------------------------
   startActivationFlow() {
     this.renderActivationWaitingBanner();
     this.requestTableActivation(false);
@@ -130,101 +180,77 @@ class CustomerApp {
   }
 
   renderActivationWaitingBanner() {
-    const bannerEl = document.getElementById('session-activation-status-banner');
-    if (!bannerEl) return;
-    bannerEl.innerHTML = `
-      <div class="glass-card p-3 mb-3 border-warning border-opacity-60 bg-dark bg-opacity-70 text-center shadow-lg animate__animated animate__fadeIn">
-        <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
-          <div class="spinner-grow spinner-grow-sm text-warning" role="status"></div>
-          <h6 class="fw-bold mb-0 text-warning" data-i18n="waiting_cashier_activation">${t('waiting_cashier_activation')}</h6>
+    const el = document.getElementById('session-activation-status-banner');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="callout tone-warning mb-3" role="status">
+        <span class="spinner-border spinner-border-sm mt-1" style="color:var(--warning)" aria-hidden="true"></span>
+        <div>
+          <div class="callout-title">${escapeHtml(t('waiting_cashier_activation'))}</div>
+          <div>${escapeHtml(t('waiting_cashier_activation_desc'))}</div>
         </div>
-        <p class="small text-white-70 mb-0" data-i18n="waiting_cashier_activation_desc">
-          ${t('waiting_cashier_activation_desc')}
-        </p>
-      </div>
-    `;
+      </div>`;
   }
 
   async requestTableActivation(userTriggered = false) {
-    if (!this.qrToken) return;
+    if (!this.qrToken || this.sessionActive) return;
     try {
-      const res = await apiPost(
-        `/api/v1/public/tables/${this.qrToken}/request-activation/`,
-        { device_token: this.deviceId, guest_count: 2 },
-        { 'X-Device-Token': this.deviceId }
-      );
+      const res = await apiPost(`/api/v1/public/tables/${encodeURIComponent(this.qrToken)}/request-activation/`, { guest_count: 2 });
       if (res.status === 'ALREADY_OPEN' && res.session_token) {
-        this.handleSessionOpened({ public_token: res.session_token });
+        this.handleSessionOpened();
       } else if (userTriggered) {
         showToast(t('waiting_cashier_activation'), 'info');
       }
     } catch (e) {
-      console.warn('Activation request error:', e);
+      if (userTriggered) showToast(e.message, 'error');
     }
   }
 
   startSessionWatch() {
     if (!this.qrToken) return;
-
-    // 1. WebSocket for instant push on table QR group
     try {
       this.tableWs = new WebSocketClient(`/ws/table/${this.qrToken}/`, (msg) => {
-        if (msg.event === 'SESSION_OPENED') {
-          this.handleSessionOpened(msg.data);
-        }
+        if (msg.event === 'SESSION_OPENED') this.handleSessionOpened();
       });
     } catch (e) {
-      console.warn('Table WS connection failed, falling back to polling:', e);
+      /* polling below covers this */
     }
 
-    // 2. High-frequency polling (every 2.5s) to guarantee instant auto-unlock on all devices
     if (this.sessionWatchTimer) clearInterval(this.sessionWatchTimer);
     this.sessionWatchTimer = setInterval(async () => {
       if (document.hidden) return;
       try {
-        const res = await apiGet(`/api/v1/public/tables/resolve/${this.qrToken}/`);
-        if (res && res.session && res.session.has_active_session && res.session.public_token) {
-          clearInterval(this.sessionWatchTimer);
-          this.handleSessionOpened(res.session);
-        }
-      } catch (err) {
-        // Silent catch on poll error
+        const res = await apiGet(`/api/v1/public/tables/resolve/${encodeURIComponent(this.qrToken)}/`);
+        if (res?.session?.has_active_session) this.handleSessionOpened();
+      } catch {
+        /* keep polling */
       }
-    }, 2500);
+    }, 4000);
   }
 
-  handleSessionOpened(sessionData) {
+  handleSessionOpened() {
     if (this.isSessionOpening) return;
     this.isSessionOpening = true;
     if (this.sessionWatchTimer) clearInterval(this.sessionWatchTimer);
-
     SoundEffects.playSuccess();
-    showToast(t('session_opened_celebration'), 'success');
-
-    const bannerEl = document.getElementById('session-activation-status-banner');
-    if (bannerEl) {
-      bannerEl.innerHTML = `
-        <div class="glass-card p-3 border-success border-opacity-75 bg-success bg-opacity-20 text-center shadow-lg animate__animated animate__zoomIn mb-3">
-          <div class="d-flex align-items-center justify-content-center gap-2 mb-1">
-            <i class="fa-solid fa-circle-check fs-4 text-success"></i>
-            <h6 class="fw-bold mb-0 text-white">${t('session_opened_celebration')}</h6>
-          </div>
-          <small class="text-white-50">Loke hela pájina pedidu...</small>
-        </div>
-      `;
+    const el = document.getElementById('session-activation-status-banner');
+    if (el) {
+      el.innerHTML = `
+        <div class="callout tone-success mb-3" role="status">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+          <div class="callout-title">${escapeHtml(t('session_opened_celebration'))}</div>
+        </div>`;
     }
-
-    // Smoothly reload page so template renders with full active session & unlocked buttons
-    setTimeout(() => {
-      window.location.reload();
-    }, 350);
+    setTimeout(() => window.location.reload(), 600);
   }
 
+  // ------------------------------------------------------------------
+  // Cart
+  // ------------------------------------------------------------------
   loadCart() {
-
     try {
-      const data = localStorage.getItem(this.storageKey);
-      return data ? JSON.parse(data) : [];
+      const data = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+      return Array.isArray(data) ? data.filter((i) => i && i.id && i.quantity > 0) : [];
     } catch {
       return [];
     }
@@ -238,55 +264,46 @@ class CustomerApp {
   addToCart(item, quantity = 1, note = '') {
     const existing = this.cart.find((i) => i.id === item.id && i.note === note);
     if (existing) {
-      existing.quantity += quantity;
+      existing.quantity = Math.min(50, existing.quantity + quantity);
     } else {
-      this.cart.push({
-        id: item.id,
-        name: item.name,
-        price: parseFloat(item.price),
-        image: item.image,
-        quantity: quantity,
-        note: note,
-      });
+      this.cart.push({ id: item.id, name: item.name, price: parseFloat(item.price) || 0, quantity, note });
     }
     this.saveCart();
     showToast(`${t('added_to_cart')} ${item.name}`, 'success');
   }
 
   updateQuantity(index, delta) {
-    if (this.cart[index]) {
-      this.cart[index].quantity += delta;
-      if (this.cart[index].quantity <= 0) {
-        const removedName = this.cart[index].name;
-        this.cart.splice(index, 1);
-        showToast(`${t('item_removed_toast') || 'Item hasai tiha ona'}: ${removedName}`, 'info');
-      }
-      this.saveCart();
+    const line = this.cart[index];
+    if (!line) return;
+    line.quantity += delta;
+    if (line.quantity <= 0) {
+      this.cart.splice(index, 1);
+      showToast(`${t('item_removed_toast')} ${line.name}`, 'info');
+    } else if (line.quantity > 50) {
+      line.quantity = 50;
     }
+    this.saveCart();
   }
 
   removeFromCart(index) {
-    if (this.cart[index] !== undefined) {
-      const removedName = this.cart[index].name;
-      this.cart.splice(index, 1);
-      this.saveCart();
-      if (typeof SoundEffects !== 'undefined' && SoundEffects.playClick) {
-        SoundEffects.playClick();
-      }
-      showToast(`${t('item_removed_toast') || 'Item hasai tiha ona'}: ${removedName}`, 'info');
-    }
+    const line = this.cart[index];
+    if (!line) return;
+    this.cart.splice(index, 1);
+    this.saveCart();
+    showToast(`${t('item_removed_toast')} ${line.name}`, 'info');
   }
 
-  clearCartWithConfirm() {
-    if (this.cart.length === 0) return;
-    const confirmMsg = t('clear_cart_confirm') || 'Tebes atu hamos karreta pedidu tomak?';
-    if (confirm(confirmMsg)) {
-      this.clearCart();
-      if (typeof SoundEffects !== 'undefined' && SoundEffects.playClick) {
-        SoundEffects.playClick();
-      }
-      showToast(t('cart_cleared') || 'Karreta mamuk ona.', 'info');
-    }
+  async clearCartWithConfirm() {
+    if (!this.cart.length) return;
+    const ok = await confirmDialog({
+      title: t('clear_cart'),
+      message: t('clear_cart_confirm'),
+      confirmText: t('clear_cart'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    this.clearCart();
+    showToast(t('cart_cleared'), 'info');
   }
 
   clearCart() {
@@ -295,11 +312,11 @@ class CustomerApp {
   }
 
   getCartTotal() {
-    return this.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    return this.cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
   }
 
   getCartCount() {
-    return this.cart.reduce((sum, item) => sum + item.quantity, 0);
+    return this.cart.reduce((sum, i) => sum + i.quantity, 0);
   }
 
   renderCartUI() {
@@ -307,89 +324,62 @@ class CustomerApp {
     const total = this.getCartTotal();
 
     const bar = document.getElementById('floating-cart-bar');
-    const badge = document.getElementById('cart-count-badge');
-    const totalEl = document.getElementById('cart-total-price');
-    const dockBadge = document.getElementById('dock-cart-badge');
-    const topDockBadge = document.getElementById('top-dock-cart-badge');
-    const clearCartBtn = document.getElementById('btn-clear-cart');
-
-    if (clearCartBtn) {
-      clearCartBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (bar) {
+      bar.classList.toggle('is-visible', count > 0);
+      document.body.classList.toggle('has-cart-bar', count > 0);
+      const badge = document.getElementById('cart-count-badge');
+      if (badge) badge.textContent = `${count} ${t('items_count')}`;
+      const totalEl = document.getElementById('cart-total-price');
+      if (totalEl) totalEl.textContent = formatMoney(total);
     }
 
-    if (bar && count > 0) {
-      bar.style.display = 'flex';
-      if (badge) badge.textContent = `${count} ${count > 1 ? 'Itens' : 'Item'}`;
-      if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
-    } else if (bar) {
-      bar.style.display = 'none';
+    const topCount = document.getElementById('top-cart-count');
+    if (topCount) {
+      topCount.hidden = count === 0;
+      topCount.textContent = count;
     }
 
-    if (dockBadge) {
-      if (count > 0) {
-        dockBadge.textContent = count;
-        dockBadge.style.display = 'block';
-      } else {
-        dockBadge.style.display = 'none';
-      }
-    }
+    const clearBtn = document.getElementById('btn-clear-cart');
+    if (clearBtn) clearBtn.hidden = count === 0;
 
-    if (topDockBadge) {
-      if (count > 0) {
-        topDockBadge.textContent = count;
-        topDockBadge.style.display = 'inline-block';
-      } else {
-        topDockBadge.style.display = 'none';
-      }
-    }
-
-    const drawerList = document.getElementById('cart-items-list');
     const drawerTotal = document.getElementById('cart-drawer-total');
-    if (drawerTotal) drawerTotal.textContent = `$${total.toFixed(2)}`;
+    if (drawerTotal) drawerTotal.textContent = formatMoney(total);
 
-    if (drawerList) {
-      if (this.cart.length === 0) {
-        drawerList.innerHTML = `
-          <div class="text-center py-5 text-white-50">
-            <i class="fa-solid fa-basket-shopping fa-3x mb-3 text-warning opacity-50"></i>
-            <p class="mb-0 fw-semibold">${t('cart_empty')}</p>
-          </div>
-        `;
-      } else {
-        drawerList.innerHTML = this.cart
-          .map(
-            (item, index) => `
-          <div class="d-flex align-items-center justify-content-between py-2.5 border-bottom border-secondary border-opacity-25 gap-2 animate__animated animate__fadeIn">
-            <div class="pe-1 flex-grow-1 min-w-0">
-              <div class="fw-bold text-white fs-6 text-truncate">${item.name}</div>
-              <div class="text-warning fw-bold small">
-                $${(item.price * item.quantity).toFixed(2)} 
-                <span class="text-white-50 small fw-normal">($${item.price.toFixed(2)}/item)</span>
-              </div>
-              ${item.note ? `<div class="small text-warning bg-warning bg-opacity-10 border border-warning border-opacity-25 rounded-pill px-2 py-0 d-inline-block mt-0.5" style="font-size:0.75rem;"><i class="fa-solid fa-pen small me-1"></i>${item.note}</div>` : ''}
-            </div>
-            <div class="d-flex align-items-center gap-1.5 flex-shrink-0">
-              <button class="btn btn-sm btn-outline-light rounded-circle d-flex align-items-center justify-content-center" style="width:30px; height:30px; padding:0;" onclick="customerApp.updateQuantity(${index}, -1)" title="Minus">
-                <i class="fa-solid fa-minus small"></i>
-              </button>
-              <span class="fw-bold text-white px-1" style="min-width:22px; text-align:center;">${item.quantity}</span>
-              <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width:30px; height:30px; padding:0;" onclick="customerApp.updateQuantity(${index}, 1)" title="Plus">
-                <i class="fa-solid fa-plus small"></i>
-              </button>
-              <button class="btn btn-sm btn-outline-danger border-opacity-50 text-danger rounded-circle d-flex align-items-center justify-content-center ms-1" style="width:30px; height:30px; padding:0;" onclick="customerApp.removeFromCart(${index})" title="${t('delete')}">
-                <i class="fa-solid fa-trash-can small"></i>
-              </button>
-            </div>
-          </div>
-        `
-          )
-          .join('');
-      }
+    const footer = document.getElementById('cart-footer');
+    if (footer) footer.hidden = count === 0;
+
+    const list = document.getElementById('cart-items-list');
+    if (!list) return;
+    if (!this.cart.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
+          <div class="empty-state-title">${escapeHtml(t('cart_empty'))}</div>
+        </div>`;
+      return;
     }
+
+    list.innerHTML = this.cart
+      .map(
+        (item, index) => `
+        <div class="cart-line">
+          <div class="cart-line-info">
+            <div class="cart-line-name">${escapeHtml(item.name)}</div>
+            ${item.note ? `<div class="cart-line-note"><i class="fa-solid fa-pen fs-8 me-1" aria-hidden="true"></i>${escapeHtml(item.note)}</div>` : ''}
+            <div class="fs-7 text-tertiary tabular">${formatMoney(item.price)} × ${item.quantity} = <strong class="text-secondary-app">${formatMoney(item.price * item.quantity)}</strong></div>
+          </div>
+          <div class="qty-stepper is-sm">
+            <button type="button" onclick="customerApp.updateQuantity(${index}, -1)" aria-label="Hamenus"><i class="fa-solid ${item.quantity === 1 ? 'fa-trash-can' : 'fa-minus'}"></i></button>
+            <span>${item.quantity}</span>
+            <button type="button" onclick="customerApp.updateQuantity(${index}, 1)" aria-label="Aumenta"><i class="fa-solid fa-plus"></i></button>
+          </div>
+        </div>`
+      )
+      .join('');
   }
 
   async submitOrder() {
-    if (this.cart.length === 0) {
+    if (!this.cart.length) {
       showToast(t('cart_empty_toast'), 'warning');
       return;
     }
@@ -398,231 +388,139 @@ class CustomerApp {
       return;
     }
 
-    const customerNote = document.getElementById('order-customer-note')?.value || '';
-    const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('ord_' + Date.now());
+    const btn = document.getElementById('btn-submit-order');
+    if (btn.disabled) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
 
+    const idempotencyKey = crypto?.randomUUID ? crypto.randomUUID() : `ord_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const payload = {
-      items: this.cart.map((item) => ({
-        menu_item_id: item.id,
-        quantity: item.quantity,
-        note: item.note,
-      })),
-      customer_note: customerNote,
+      items: this.cart.map((i) => ({ menu_item_id: i.id, quantity: i.quantity, note: i.note })),
+      customer_note: document.getElementById('order-customer-note')?.value.trim() || '',
     };
 
-    const submitBtn = document.getElementById('btn-submit-order');
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> ...';
-    }
-
     try {
-      const order = await apiPost(`/api/v1/public/sessions/${this.sessionToken}/orders/`, payload, {
+      const order = await apiPost(`/api/v1/public/sessions/${encodeURIComponent(this.sessionToken)}/orders/`, payload, {
         'Idempotency-Key': idempotencyKey,
-        'X-Device-Token': this.deviceId,
       });
-
       this.clearCart();
-      const cartModal = bootstrap.Offcanvas.getInstance(document.getElementById('cartOffcanvas'));
-      if (cartModal) cartModal.hide();
-
+      const noteEl = document.getElementById('order-customer-note');
+      if (noteEl) noteEl.value = '';
+      bootstrap.Offcanvas.getInstance(document.getElementById('cartOffcanvas'))?.hide();
       showToast(`${t('order_sent_toast')} ${order.order_code}. ${t('waiting_cashier_toast')}`, 'success');
       SoundEffects.playSuccess();
-
       this.loadActiveOrders();
+      document.getElementById('customer-active-orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = `<i class="fa-solid fa-paper-plane me-1"></i> ${t('btn_submit_order')}`;
-      }
+      btn.disabled = false;
+      btn.innerHTML = original;
     }
   }
 
+  // ------------------------------------------------------------------
+  // Orders and bill
+  // ------------------------------------------------------------------
   async loadActiveOrders() {
     if (!this.sessionToken) return;
-
     try {
-      const orders = await apiGet(`/api/v1/public/sessions/${this.sessionToken}/orders/list/`, {
-        'X-Device-Token': this.deviceId,
-      });
-      const newOrders = orders || [];
-      const newJson = JSON.stringify(newOrders);
-      if (this.lastOrdersJson !== newJson) {
-        this.lastOrdersJson = newJson;
-        this.activeOrders = newOrders;
+      const orders = (await apiGet(`/api/v1/public/sessions/${encodeURIComponent(this.sessionToken)}/orders/list/`)) || [];
+      const json = JSON.stringify(orders);
+      if (json !== this.lastOrdersJson) {
+        this.lastOrdersJson = json;
+        this.activeOrders = orders;
         this.renderOrdersUI();
         this.checkBillButtonEligibility();
       }
     } catch (e) {
-      // Session closed or inactive
+      if (e.code === 'DEVICE_LOCKED') window.location.reload();
     }
+  }
+
+  billEligibility() {
+    const orders = this.activeOrders || [];
+    const live = orders.filter((o) => o.status !== 'REJECTED' && o.status !== 'CANCELLED');
+    if (!live.length) return { ok: false, reason: t('bill_need_order') };
+    if (live.some((o) => COOKING_STATUSES.includes(o.status))) return { ok: false, reason: t('bill_still_cooking') };
+    if (!live.some((o) => o.status === 'SERVED' || o.status === 'COMPLETED')) return { ok: false, reason: t('bill_need_served') };
+    return { ok: true, reason: '' };
   }
 
   checkBillButtonEligibility() {
     const btn = document.getElementById('btn-request-bill');
+    const hint = document.getElementById('bill-hint');
     if (!btn) return;
-
-    // If button already shows requested or paid, preserve
-    if (btn.dataset.status === 'BILL_REQUESTED') {
+    if (btn.dataset.status === 'BILL_REQUESTED' || btn.dataset.status === 'PAID') {
       btn.disabled = true;
-      btn.className = 'btn btn-sm btn-secondary text-white fw-bold rounded-pill px-3 shadow-sm';
-      btn.innerHTML = `<i class="fa-solid fa-clock me-1"></i> ${t('bill_requested')}`;
-      btn.removeAttribute('title');
+      if (hint) hint.textContent = btn.dataset.status === 'BILL_REQUESTED' ? t('bill_wait_cashier') : '';
       return;
     }
-
-    if (btn.dataset.status === 'PAID') {
-      btn.disabled = true;
-      btn.className = 'btn btn-sm btn-success text-white fw-bold rounded-pill px-3 shadow-sm';
-      btn.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i> ${t('paid_status')}`;
-      btn.removeAttribute('title');
-      return;
-    }
-
-    const hasAnyOrder = this.activeOrders && this.activeOrders.length > 0;
-    const hasCookingOrder = hasAnyOrder && this.activeOrders.some((o) =>
-      ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING'].includes(o.status)
-    );
-    const hasServedOrder = hasAnyOrder && this.activeOrders.some((o) =>
-      o.status === 'SERVED' || o.status === 'COMPLETED'
-    );
-
-    if (!hasAnyOrder) {
-      btn.disabled = true;
-      btn.dataset.eligible = 'false';
-      btn.className = 'btn btn-sm btn-outline-secondary text-white-50 opacity-60 rounded-pill px-3 shadow-sm';
-      btn.title = t('bill_need_order') || 'Favor halo pedidu uluk molok husu konta.';
-      btn.innerHTML = `<i class="fa-solid fa-receipt me-1"></i> ${t('request_bill')}`;
-    } else if (hasCookingOrder) {
-      btn.disabled = true;
-      btn.dataset.eligible = 'cooking';
-      btn.className = 'btn btn-sm btn-outline-warning text-warning opacity-75 rounded-pill px-3 shadow-sm';
-      btn.title = t('bill_still_cooking') || 'Pedidu sei tein hela iha dapur.';
-      btn.innerHTML = `<i class="fa-solid fa-utensils me-1"></i> ${t('request_bill')}`;
-    } else if (!hasServedOrder) {
-      btn.disabled = true;
-      btn.dataset.eligible = 'not_served';
-      btn.className = 'btn btn-sm btn-outline-secondary text-white-50 opacity-60 rounded-pill px-3 shadow-sm';
-      btn.title = t('bill_need_served') || 'Hein hahán entrega ba meza ona foin bele husu konta.';
-      btn.innerHTML = `<i class="fa-solid fa-receipt me-1"></i> ${t('request_bill')}`;
-    } else {
-      // Eligible: at least one order served and no orders cooking
-      btn.disabled = false;
-      btn.dataset.eligible = 'true';
-      btn.className = 'btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 shadow-sm pulse-gold';
-      btn.title = t('request_bill') || 'Husu Konta';
-      btn.innerHTML = `<i class="fa-solid fa-receipt me-1"></i> ${t('request_bill')}`;
-    }
+    const { ok, reason } = this.billEligibility();
+    btn.disabled = !ok;
+    btn.classList.toggle('btn-primary', ok);
+    btn.classList.toggle('btn-secondary-app', !ok);
+    if (hint) hint.textContent = reason;
   }
 
   renderOrdersUI() {
-    const listEl = document.getElementById('customer-active-orders');
-    if (!listEl) return;
-
-    if (this.activeOrders.length === 0) {
-      listEl.innerHTML = '';
+    const el = document.getElementById('customer-active-orders');
+    if (!el) return;
+    if (!this.activeOrders.length) {
+      el.innerHTML = '';
       return;
     }
 
-    listEl.innerHTML = `
-      <div class="glass-card p-3 mb-3 border-warning border-opacity-40 shadow-lg">
-        <h6 class="fw-bold mb-3 text-warning d-flex align-items-center justify-content-between" style="font-family: 'Outfit', sans-serif;">
-          <span><i class="fa-solid fa-clock-rotate-left me-2"></i> ${t('order_status_title')}</span>
-          <span class="badge bg-warning text-dark fw-bold rounded-pill px-2.5 py-1 shadow-sm">${this.activeOrders.length} ${t('total_orders')}</span>
-        </h6>
-        ${this.activeOrders
-          .map((ord) => {
-            const statusClass = {
-              WAITING_CASHIER_CONFIRMATION: 'status-waiting',
-              CONFIRMED: 'status-confirmed',
-              PREPARING: 'status-preparing',
-              READY: 'status-ready',
-              SERVED: 'status-served',
-              COMPLETED: 'status-completed',
-              REJECTED: 'status-rejected',
-            }[ord.status] || 'bg-secondary text-white';
-
-            const statusText = {
-              WAITING_CASHIER_CONFIRMATION: t('status_waiting'),
-              CONFIRMED: t('status_confirmed'),
-              PREPARING: t('status_preparing'),
-              READY: t('status_ready'),
-              SERVED: t('status_served'),
-              COMPLETED: t('status_completed'),
-              REJECTED: `${t('status_rejected')}: ${ord.rejection_reason || ''}`,
-            }[ord.status] || ord.status;
-
-            return `
-            <div class="p-3 border border-secondary border-opacity-25 rounded-3 mb-2 bg-dark bg-opacity-40">
-              <div class="d-flex flex-wrap justify-content-between align-items-center gap-1 mb-2">
-                <span class="fw-bold text-white fs-6 text-truncate" style="max-width: 140px;">${ord.order_code}</span>
-                <span class="badge badge-status ${statusClass} text-wrap" style="font-size: 0.72rem; padding: 0.32rem 0.55rem; max-width: 100%; white-space: normal;">${statusText}</span>
-              </div>
-              <div class="small text-white-50 mb-2">
-                ${ord.items.map((i) => `<span class="text-white">${i.quantity}x</span> ${i.menu_name_snapshot}`).join(', ')}
-              </div>
-              <div class="d-flex justify-content-between align-items-center small fw-bold pt-2 border-top border-secondary border-opacity-25">
-                <span class="text-warning fs-6">$${ord.grand_total}</span>
-                <a href="/t/${this.qrToken}/order/${ord.order_code}/" class="btn btn-sm btn-outline-warning rounded-pill px-3 py-1">
-                  ${t('btn_view_order')}
-                </a>
-              </div>
+    const rows = this.activeOrders
+      .map((o) => {
+        const st = ORDER_STATUS[o.status] || { cls: 'status-served', key: o.status };
+        const items = (o.items || []).map((i) => `${i.quantity}× ${escapeHtml(i.menu_name_snapshot)}`).join(', ');
+        const rejected = o.status === 'REJECTED' && o.rejection_reason
+          ? `<div class="fs-7 mt-1" style="color:var(--danger)">${escapeHtml(t('reason'))} ${escapeHtml(o.rejection_reason)}</div>`
+          : '';
+        return `
+          <div class="order-card">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+              <span class="fw-bold">${escapeHtml(o.order_code)}</span>
+              <span class="status ${st.cls}">${escapeHtml(t(st.key))}</span>
             </div>
-          `;
-          })
-          .join('')}
-      </div>
-    `;
+            <div class="fs-7 text-secondary-app">${items}</div>
+            ${rejected}
+            <div class="d-flex justify-content-between align-items-center mt-2">
+              <span class="price">${formatMoney(o.grand_total)}</span>
+              <a class="btn btn-sm btn-secondary-app" href="/t/${encodeURIComponent(this.qrToken)}/order/${encodeURIComponent(o.order_code)}/">${escapeHtml(t('btn_track_order'))}</a>
+            </div>
+          </div>`;
+      })
+      .join('');
+
+    el.innerHTML = `
+      <section class="surface surface-pad mb-3" aria-labelledby="orders-title">
+        <div class="section-head">
+          <h2 class="section-title" id="orders-title">${escapeHtml(t('order_status_title'))} <span class="count">${this.activeOrders.length}</span></h2>
+        </div>
+        ${rows}
+      </section>`;
   }
 
   async requestBill() {
-    if (!this.sessionToken) {
-      showToast(t('session_not_open_toast') || 'Sesi meza seidauk loke.', 'warning');
+    const { ok, reason } = this.billEligibility();
+    if (!ok) {
+      showToast(reason, 'warning');
       return;
     }
-
-    if (!this.activeOrders || this.activeOrders.length === 0) {
-      showToast(t('bill_need_order') || 'Favor halo pedidu uluk molok husu konta.', 'warning');
-      return;
-    }
-
-    const hasCookingOrder = this.activeOrders.some((o) =>
-      ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING'].includes(o.status)
-    );
-    if (hasCookingOrder) {
-      showToast(t('bill_still_cooking') || 'Pedidu sei tein hela iha dapur.', 'warning');
-      return;
-    }
-
-    const hasServedOrder = this.activeOrders.some((o) => o.status === 'SERVED' || o.status === 'COMPLETED');
-    if (!hasServedOrder) {
-      showToast(t('bill_need_served') || "Hein hahán entrega ba meza ona foin bele husu konta.", 'warning');
-      return;
-    }
-
     const btn = document.getElementById('btn-request-bill');
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> ...';
-    }
-
+    btn.disabled = true;
     try {
-      const res = await apiPost(
-        `/api/v1/public/sessions/${this.sessionToken}/request-bill/`,
-        {},
-        { 'X-Device-Token': this.deviceId }
-      );
-      const msg = res.message || t('bill_sent_toast');
-      showToast(msg, 'info');
+      const res = await apiPost(`/api/v1/public/sessions/${encodeURIComponent(this.sessionToken)}/request-bill/`, {});
+      showToast(res.message || t('bill_sent_toast'), 'success');
       SoundEffects.playBell();
-      if (btn) {
-        btn.disabled = true;
-        btn.dataset.status = 'BILL_REQUESTED';
-        btn.className = 'btn btn-sm btn-secondary text-white fw-bold rounded-pill px-3 shadow-sm';
-        btn.innerHTML = `<i class="fa-solid fa-clock me-1"></i> ${t('bill_requested')}`;
-      }
+      btn.dataset.status = 'BILL_REQUESTED';
+      btn.innerHTML = `<i class="fa-solid fa-clock" aria-hidden="true"></i><span>${escapeHtml(t('bill_requested'))}</span>`;
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-secondary-app');
+      this.checkBillButtonEligibility();
     } catch (e) {
       showToast(e.message, 'error');
       this.checkBillButtonEligibility();
@@ -631,132 +529,25 @@ class CustomerApp {
 
   initWebSocket() {
     if (!this.sessionToken) return;
-
     this.ws = new WebSocketClient(`/ws/customer/${this.sessionToken}/`, (msg) => {
+      const code = msg.data?.order_code || '';
       if (msg.event === 'ORDER_CONFIRMED') {
-        showToast(`${t('order_confirmed_toast')} ${msg.data.order_code}!`, 'success');
+        showToast(`${t('order_confirmed_toast')} ${code}`, 'success');
         SoundEffects.playSuccess();
-        this.loadActiveOrders();
       } else if (msg.event === 'ORDER_REJECTED') {
-        showToast(`${t('order_rejected_toast')} ${msg.data.order_code}: ${msg.data.reason}`, 'error');
-        this.loadActiveOrders();
-      } else if (msg.event === 'ORDER_PREPARING' || msg.event === 'ORDER_READY' || msg.event === 'ORDER_SERVED') {
-        showToast(`${t('order_status_toast')} ${msg.data.order_code}`, 'info');
-        this.loadActiveOrders();
+        showToast(`${t('order_rejected_toast')} ${code}: ${msg.data?.reason || ''}`, 'error');
+      } else if (['ORDER_PREPARING', 'ORDER_READY', 'ORDER_SERVED'].includes(msg.event)) {
+        showToast(`${t('order_status_toast')} ${code}`, 'info');
       } else if (msg.event === 'SESSION_CLOSED') {
         showToast(t('session_closed_toast'), 'info');
         setTimeout(() => window.location.reload(), 2000);
+        return;
       }
+      this.loadActiveOrders();
     });
 
-    // Fallback polling every 10 seconds, only if document is visible
     setInterval(() => {
-      if (!document.hidden) {
-        this.loadActiveOrders();
-      }
+      if (!document.hidden) this.loadActiveOrders();
     }, 10000);
-  }
-
-  scrollToActiveOrders() {
-    const el = document.getElementById('customer-active-orders');
-    if (el && el.children.length > 0) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      showToast(t('alert_waiting_desc') || "Seidauk iha pedidu ativu ba sesi meza ne'e.", 'info');
-    }
-  }
-}
-
-/**
- * Global Navigation & Dock Inline Search Controllers
- */
-function scrollToMenuCatalog() {
-  const dockMenuBtn = document.getElementById('dock-btn-menu');
-  if (dockMenuBtn) {
-    document.querySelectorAll('.flying-glass-dock .dock-item-btn').forEach(b => b.classList.remove('active'));
-    dockMenuBtn.classList.add('active');
-  }
-  const el = document.getElementById('menu-grid');
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-}
-
-function scrollToActiveOrders() {
-  const dockStatusBtn = document.getElementById('dock-btn-status');
-  if (dockStatusBtn) {
-    document.querySelectorAll('.flying-glass-dock .dock-item-btn').forEach(b => b.classList.remove('active'));
-    dockStatusBtn.classList.add('active');
-  }
-  const el = document.getElementById('customer-active-orders');
-  if (el && el.children.length > 0) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else {
-    showToast(t('alert_waiting_desc') || "Seidauk iha pedidu ativu ba sesi meza ne'e.", 'info');
-  }
-}
-
-function toggleDockSearch() {
-  const normalItems = document.getElementById('dock-normal-items');
-  const searchBox = document.getElementById('dock-search-box');
-  const input = document.getElementById('dock-search-input');
-  if (normalItems && searchBox) {
-    normalItems.style.setProperty('display', 'none', 'important');
-    searchBox.style.setProperty('display', 'flex', 'important');
-    if (input) {
-      input.focus();
-    }
-  }
-}
-
-function closeDockSearch() {
-  const normalItems = document.getElementById('dock-normal-items');
-  const searchBox = document.getElementById('dock-search-box');
-  const input = document.getElementById('dock-search-input');
-  const menuSearch = document.getElementById('menu-search');
-  if (normalItems && searchBox) {
-    searchBox.style.setProperty('display', 'none', 'important');
-    normalItems.style.removeProperty('display');
-    if (input) {
-      input.value = '';
-    }
-    if (menuSearch) {
-      menuSearch.value = '';
-    }
-    document.querySelectorAll('.menu-item-col').forEach((card) => {
-      card.style.display = 'block';
-    });
-  }
-}
-
-/**
- * Filter menu by category slug
- */
-function filterByCategory(slug) {
-  const targetSlug = String(slug || 'all').trim();
-  document.querySelectorAll('.cat-pill').forEach((btn) => {
-    const btnCat = String(btn.dataset.category || btn.getAttribute('data-category') || '').trim();
-    if (btnCat === targetSlug) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
-
-  const items = document.querySelectorAll('.menu-item-col');
-  let visibleCount = 0;
-  items.forEach((col) => {
-    const colCat = String(col.dataset.category || col.getAttribute('data-category') || '').trim();
-    if (targetSlug === 'all' || colCat === targetSlug) {
-      col.style.display = 'block';
-      visibleCount++;
-    } else {
-      col.style.display = 'none';
-    }
-  });
-
-  const activePill = document.querySelector(`.cat-pill[data-category="${slug}"]`);
-  if (activePill) {
-    activePill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 }

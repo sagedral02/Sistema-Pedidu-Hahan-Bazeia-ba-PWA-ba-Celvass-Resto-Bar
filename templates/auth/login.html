@@ -1,446 +1,85 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="tet">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Login Staff — Celvass Resto & Bar</title>
+{% extends 'base/base.html' %}
 
-  <link rel="manifest" href="{% url 'pwa-manifest' %}">
-  <meta name="theme-color" content="#f97316">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+{% block title %}Login staff - {{ current_restaurant.name }}{% endblock %}
+{% block role %}admin{% endblock %}
+{% block topbar %}{% endblock %}
+{% block main_class %}p-0{% endblock %}
 
-  <!-- Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
-
-  <!-- Bootstrap & FontAwesome -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: 'Outfit', sans-serif;
-      background: linear-gradient(135deg, #0f0800 0%, #1e0f00 40%, #0a1628 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-
-    /* Animated background orbs */
-    body::before, body::after {
-      content: '';
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(80px);
-      opacity: 0.4;
-      pointer-events: none;
-      animation: float-orb 8s ease-in-out infinite;
-    }
-    body::before {
-      width: 500px;
-      height: 500px;
-      background: radial-gradient(circle, rgba(249,115,22,0.3), transparent);
-      top: -150px;
-      left: -100px;
-    }
-    body::after {
-      width: 400px;
-      height: 400px;
-      background: radial-gradient(circle, rgba(14,165,233,0.2), transparent);
-      bottom: -100px;
-      right: -80px;
-      animation-delay: 4s;
-    }
-    @keyframes float-orb {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      50% { transform: translate(30px, -30px) scale(1.05); }
-    }
-
-    .login-wrap {
-      position: relative;
-      z-index: 10;
-      width: 100%;
-      max-width: 420px;
-      padding: 1.5rem;
-    }
-
-    .login-card {
-      background: rgba(255,255,255,0.04);
-      backdrop-filter: blur(32px);
-      -webkit-backdrop-filter: blur(32px);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 28px;
-      padding: 2.5rem 2rem;
-      box-shadow: 0 30px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
-    }
-
-    /* Logo */
-    .login-logo {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    .logo-ring {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #f97316, #ea580c);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-      color: #fff;
-      margin: 0 auto 1rem;
-      border: 2px solid rgba(255, 255, 255, 0.15);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-    .login-brand-name {
-      font-size: 1.5rem;
-      font-weight: 800;
-      color: #fff;
-      margin: 0;
-      letter-spacing: -0.5px;
-    }
-    .login-brand-sub {
-      font-size: 0.82rem;
-      color: rgba(255,255,255,0.45);
-      margin: 0.2rem 0 0;
-    }
-
-    /* Error alert */
-    .login-alert {
-      background: rgba(239,68,68,0.15);
-      border: 1px solid rgba(239,68,68,0.3);
-      border-radius: 12px;
-      color: #fca5a5;
-      font-size: 0.875rem;
-      padding: 0.75rem 1rem;
-      margin-bottom: 1.25rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    /* Form labels */
-    .form-label-custom {
-      color: rgba(255,255,255,0.7);
-      font-size: 0.82rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 0.4rem;
-      display: block;
-    }
-
-    /* Inputs */
-    .input-group-custom {
-      position: relative;
-      margin-bottom: 1.2rem;
-    }
-    .input-icon {
-      position: absolute;
-      left: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: rgba(255,255,255,0.35);
-      font-size: 0.9rem;
-      z-index: 2;
-      pointer-events: none;
-    }
-    .login-input {
-      width: 100%;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 12px;
-      color: #fff;
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.95rem;
-      padding: 0.75rem 1rem 0.75rem 2.6rem;
-      transition: all 0.2s;
-      outline: none;
-    }
-    .login-input::placeholder { color: rgba(255,255,255,0.3); }
-    .login-input:focus {
-      border-color: rgba(249,115,22,0.6);
-      background: rgba(255,255,255,0.08);
-      box-shadow: 0 0 0 3px rgba(249,115,22,0.15);
-    }
-    .login-input:-webkit-autofill {
-      -webkit-box-shadow: 0 0 0 100px rgba(30,15,0,0.9) inset;
-      -webkit-text-fill-color: #fff;
-    }
-
-    /* Toggle password */
-    .toggle-pw {
-      position: absolute;
-      right: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: rgba(255,255,255,0.35);
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 0;
-      font-size: 0.9rem;
-      transition: color 0.2s;
-    }
-    .toggle-pw:hover { color: rgba(255,255,255,0.7); }
-
-    /* Submit button */
-    .btn-login {
-      width: 100%;
-      background: linear-gradient(135deg, #f97316, #ea580c);
-      color: #fff;
-      border: none;
-      border-radius: 14px;
-      font-family: 'Outfit', sans-serif;
-      font-size: 1rem;
-      font-weight: 700;
-      padding: 0.9rem;
-      cursor: pointer;
-      transition: all 0.25s;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      margin-top: 0.5rem;
-    }
-    .btn-login:hover {
-      background: linear-gradient(135deg, #fb923c, #f97316);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-    }
-    .btn-login:active {
-      transform: translateY(0);
-    }
-    .btn-login .spinner {
-      display: none;
-      width: 18px;
-      height: 18px;
-      border: 2px solid rgba(255,255,255,0.4);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    .btn-login.loading .spinner { display: block; }
-    .btn-login.loading .btn-text { display: none; }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* PWA install prompt */
-    .pwa-install-row {
-      display: none;
-      align-items: center;
-      gap: 0.6rem;
-      background: rgba(234,179,8,0.08);
-      border: 1px solid rgba(234,179,8,0.2);
-      border-radius: 12px;
-      padding: 0.7rem 1rem;
-      margin-top: 1.2rem;
-      color: #fbbf24;
-      font-size: 0.83rem;
-    }
-    .pwa-install-row .pwa-install-btn {
-      margin-left: auto;
-      background: #eab308;
-      color: #000;
-      border: none;
-      border-radius: 8px;
-      padding: 0.3rem 0.7rem;
-      font-weight: 700;
-      font-size: 0.78rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .pwa-install-row .pwa-install-btn:hover { background: #f59e0b; }
-
-    /* Divider & roles hint */
-    .role-hint {
-      text-align: center;
-      margin-top: 1.5rem;
-      padding-top: 1.2rem;
-      border-top: 1px solid rgba(255,255,255,0.07);
-    }
-    .role-chips {
-      display: flex;
-      gap: 0.5rem;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-top: 0.6rem;
-    }
-    .role-chip {
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 50px;
-      padding: 0.3rem 0.7rem;
-      font-size: 0.78rem;
-      color: rgba(255,255,255,0.55);
-    }
-    .role-chip i { font-size: 0.7rem; }
-  </style>
-</head>
-<body>
-
-<div class="login-wrap">
-  <div class="login-card">
-
-    <!-- Language Selector Dropdown -->
-    <div class="d-flex justify-content-end mb-3 login-lang-dropdown">
-      <div class="dropdown">
-        <button class="btn btn-sm btn-outline-light rounded-pill px-3 py-1 dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown" data-bs-display="static" id="current-lang-label" style="font-size: 0.8rem; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18);">
-          🇹🇱<span class="ms-1">Tetun</span>
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end shadow">
-          <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('tet')">🇹🇱 Tetun</a></li>
-          <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('pt')">🇵🇹 Português</a></li>
-          <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('en')">🇬🇧 English</a></li>
-          <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('id')">🇮🇩 Indonesia</a></li>
-        </ul>
-      </div>
+{% block content %}
+<div class="standalone">
+  <div class="standalone-card">
+    <div class="standalone-top">
+      <span class="app-brand">
+        <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+        <span class="app-brand-text">{{ current_restaurant.name }}</span>
+      </span>
+      {% include 'base/_lang_menu.html' %}
     </div>
 
-    <!-- Logo -->
-    <div class="login-logo">
-      <div class="logo-ring">
-        <i class="fa-solid fa-utensils"></i>
+    <h1 class="standalone-title" data-i18n="login_heading_staff">Tama ba portal staff</h1>
+    <p class="standalone-text" data-i18n="login_subheading">Kaixa, Dapur no Admin</p>
+
+    {% for message in messages %}
+      <div class="callout tone-danger mb-3" role="alert">
+        <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+        <div>{{ message }}</div>
       </div>
-      <p class="login-brand-name">Celvass Resto & Bar</p>
-      <p class="login-brand-sub" data-i18n="login_subheading">Portal Staff — Kaixa, Dapur & Admin</p>
-    </div>
+    {% endfor %}
 
-    <!-- Error Messages -->
-    {% if messages %}
-      {% for message in messages %}
-        <div class="login-alert">
-          <i class="fa-solid fa-circle-exclamation"></i>
-          {{ message }}
-        </div>
-      {% endfor %}
-    {% endif %}
-
-    <!-- Login Form -->
-    <form method="POST" action="{% url 'login' %}" id="login-form">
+    <form method="post" action="{% url 'login' %}" id="login-form" novalidate>
       {% csrf_token %}
-
-      <div>
-        <label class="form-label-custom" for="username" data-i18n="login_username">Naran-Uzuáriu</label>
-        <div class="input-group-custom">
-          <i class="fa-solid fa-user input-icon"></i>
-          <input
-            type="text"
-            class="login-input"
-            id="username"
-            name="username"
-            placeholder="Tau ita nia naran-uzuáriu"
-            data-i18n-placeholder="login_username_placeholder"
-            required
-            autofocus
-            autocomplete="username"
-          >
-        </div>
+      <div class="mb-3">
+        <label class="form-label" for="username" data-i18n="login_username">Naran-uzuáriu</label>
+        <input type="text" class="form-control" id="username" name="username" required autofocus autocomplete="username" autocapitalize="none" spellcheck="false">
       </div>
-
-      <div>
-        <label class="form-label-custom" for="password" data-i18n="login_password">Liafuan Xave</label>
-        <div class="input-group-custom">
-          <i class="fa-solid fa-lock input-icon"></i>
-          <input
-            type="password"
-            class="login-input"
-            id="password"
-            name="password"
-            placeholder="Tau ita nia liafuan xave"
-            data-i18n-placeholder="login_password_placeholder"
-            required
-            autocomplete="current-password"
-          >
-          <button type="button" class="toggle-pw" onclick="togglePassword()" id="toggle-pw-btn" title="Haree/Taka liafuan xave" data-i18n-title="toggle_pw_title">
-            <i class="fa-solid fa-eye" id="pw-eye-icon"></i>
+      <div class="mb-4">
+        <label class="form-label" for="password" data-i18n="login_password">Liafuan xave</label>
+        <div class="password-field">
+          <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+          <button type="button" class="password-toggle" id="toggle-pw-btn" aria-label="Haree liafuan xave" aria-pressed="false" data-i18n-title="toggle_pw_title" title="Haree liafuan xave">
+            <i class="fa-solid fa-eye" id="pw-eye-icon" aria-hidden="true"></i>
           </button>
         </div>
       </div>
-
-      <button type="submit" class="btn-login" id="btn-login">
-        <div class="spinner"></div>
-        <span class="btn-text">
-          <i class="fa-solid fa-right-to-bracket"></i>
-          <span data-i18n="login_btn">Tama ba Sistema</span>
-        </span>
+      <button type="submit" class="btn btn-primary btn-lg w-100" id="btn-login">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" hidden></span>
+        <span data-i18n="login_btn">Tama</span>
       </button>
     </form>
 
-    <!-- PWA Install Prompt -->
-    <div class="pwa-install-row" id="pwa-login-install">
-      <i class="fa-solid fa-mobile-screen-button"></i>
-      <span data-i18n="install_pwa_fast">Instala Celvass App</span>
-      <button class="pwa-install-btn" onclick="installPWA()" data-i18n="install_app">
-        <i class="fa-solid fa-download me-1"></i>Instala
-      </button>
+    <div class="standalone-footer">
+      <a href="/"><i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i><span data-i18n="login_back_home">Fila ba pájina prinsipál</span></a>
+      <span data-i18n="login_role_hint">Konta staff de'it</span>
     </div>
-
-    <!-- Role info (non-clickable, informational only) -->
-    <div class="role-hint">
-      <span style="color: rgba(255,255,255,0.4); font-size: 0.78rem;" data-i18n="login_role_hint">Aksesu ba staff ne'ebé registu deit</span>
-      <div class="role-chips">
-        <div class="role-chip"><i class="fa-solid fa-shield-halved" style="color:#ef4444"></i> Admin</div>
-        <div class="role-chip"><i class="fa-solid fa-cash-register" style="color:#eab308"></i> Kaixa</div>
-        <div class="role-chip"><i class="fa-solid fa-fire-burner" style="color:#22d3ee"></i> Dapur</div>
-      </div>
-      <div class="mt-3">
-        <a href="/" style="color: rgba(255,255,255,0.45); font-size: 0.8rem; text-decoration: none; transition: color 0.2s;">
-          <i class="fa-solid fa-arrow-left me-1"></i> <span data-i18n="login_back_home">Fila ba Pájina Prinsipál</span>
-        </a>
-      </div>
-    </div>
-
   </div>
 </div>
+{% endblock %}
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{% static 'js/i18n.js' %}"></script>
-<script src="{% static 'js/pwa.js' %}"></script>
+{% block extra_js %}
 <script>
-  // Toggle password visibility
-  function togglePassword() {
+  (function () {
     const input = document.getElementById('password');
+    const toggle = document.getElementById('toggle-pw-btn');
     const icon = document.getElementById('pw-eye-icon');
-    if (input.type === 'password') {
-      input.type = 'text';
-      icon.classList.replace('fa-eye', 'fa-eye-slash');
-    } else {
-      input.type = 'password';
-      icon.classList.replace('fa-eye-slash', 'fa-eye');
-    }
-  }
+    toggle.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      icon.classList.toggle('fa-eye', !show);
+      icon.classList.toggle('fa-eye-slash', show);
+      toggle.setAttribute('aria-pressed', String(show));
+    });
 
-  // Loading state on form submit
-  document.getElementById('login-form').addEventListener('submit', function() {
-    document.getElementById('btn-login').classList.add('loading');
-  });
-
-  // PWA install prompt
-  window.addEventListener('load', () => {
-    if (window._deferredInstallPrompt) {
-      document.getElementById('pwa-login-install').style.display = 'flex';
-    }
-  });
-  document.addEventListener('pwa-installable', () => {
-    document.getElementById('pwa-login-install').style.display = 'flex';
-  });
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      const form = e.currentTarget;
+      if (!form.username.value.trim() || !form.password.value) {
+        e.preventDefault();
+        showToast(t('validation_user_pass_required'), 'warning');
+        return;
+      }
+      const btn = document.getElementById('btn-login');
+      btn.disabled = true;
+      btn.querySelector('.spinner-border').hidden = false;
+    });
+  })();
 </script>
-</body>
-</html>
+{% endblock %}

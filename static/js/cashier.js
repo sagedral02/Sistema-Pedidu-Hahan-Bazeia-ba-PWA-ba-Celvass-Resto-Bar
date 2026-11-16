@@ -1,7 +1,40 @@
 /**
- * Celvass Resto & Bar — Cashier Command Center & POS Controller
- * Pure Tetun Interface, Dark Glassmorphism, Shift Report, & Anti-Double-Click POS
+ * Cashier portal controller: verification queue, table activation, tables & POS payment,
+ * bill requests, order / receipt history and shift close (Z-report).
+ * All server values are escaped before they are inserted into the DOM.
  */
+
+const CASHIER_STATUS = {
+  WAITING_CASHIER_CONFIRMATION: ['status-waiting', 'status_waiting'],
+  CONFIRMED: ['status-confirmed', 'status_confirmed'],
+  PREPARING: ['status-preparing', 'status_preparing'],
+  READY: ['status-ready', 'status_ready'],
+  SERVED: ['status-served', 'status_served'],
+  COMPLETED: ['status-completed', 'status_completed'],
+  REJECTED: ['status-rejected', 'status_rejected'],
+  CANCELLED: ['status-cancelled', 'status_cancelled'],
+};
+
+function statusPill(status) {
+  const [cls, key] = CASHIER_STATUS[status] || ['status-served', status];
+  return `<span class="status ${cls}">${escapeHtml(t(key))}</span>`;
+}
+
+function setCount(name, value) {
+  document.querySelectorAll(`[data-count-for="${name}"]`).forEach((el) => {
+    el.textContent = value > 0 ? value : '';
+    el.dataset.count = value;
+  });
+}
+
+function emptyState(icon, title, desc = '') {
+  return `
+    <div class="empty-state">
+      <i class="fa-solid ${icon}" aria-hidden="true"></i>
+      <div class="empty-state-title">${escapeHtml(title)}</div>
+      ${desc ? `<div class="fs-7">${escapeHtml(desc)}</div>` : ''}
+    </div>`;
+}
 
 class CashierApp {
   constructor() {
@@ -9,17 +42,16 @@ class CashierApp {
     this.tables = [];
     this.activationRequests = [];
     this.tableFilter = 'ALL';
-    this.todayOrdersHistory = [];
     this.selectedTableId = null;
-    this.selectedOrderForReject = null;
     this.currentPaymentSessionId = null;
     this.currentBillAmount = 0;
+    this.paymentIdempotencyKey = null;
+    this.currentShiftData = null;
 
     this.knownActivationIds = null;
     this.knownOrderIds = null;
     this.knownBillSessionIds = null;
 
-    // History state
     this.currentHistorySubTab = 'orders';
     this.ordersDateFilter = 'today';
     this.billsDateFilter = 'today';
@@ -30,117 +62,138 @@ class CashierApp {
   }
 
   init() {
-    this.loadPendingOrders();
-    this.loadTables();
-    this.loadActivationRequests();
+    this.refreshAll();
     this.initWebSocket();
 
     window.addEventListener('languageChanged', () => {
       this.renderPendingOrdersUI();
-      this.renderTablesUI();
       this.renderActivationRequestsUI();
+      this.renderTablesUI();
+      this.updateBillAlertsUI();
+      this.filterOrdersHistory();
+      this.filterBillsHistory();
     });
 
-    // Polling fallback every 5 seconds
+    window.addEventListener('app:panel', (e) => {
+      const id = e.detail.id;
+      if (id === 'orders-history-panel') this.refreshActiveHistoryTab();
+      if (id === 'shift-close-panel') this.loadShiftSummary();
+      if (id === 'bill-alerts-panel') this.loadTables();
+    });
+
     setInterval(() => {
+      if (document.hidden) return;
       this.loadPendingOrders();
       this.loadTables();
       this.loadActivationRequests();
-    }, 5000);
+    }, 8000);
   }
 
-
-  setTableFilter(filter) {
-    this.tableFilter = filter;
-
-    const btnAll = document.getElementById('filter-table-all');
-    const btnOpen = document.getElementById('filter-table-open');
-    const btnAvail = document.getElementById('filter-table-avail');
-
-    if (btnAll) btnAll.className = filter === 'ALL' ? 'btn btn-warning btn-sm px-3 fw-bold rounded-start-pill text-dark' : 'btn btn-outline-warning btn-sm px-3 fw-bold rounded-start-pill text-white';
-    if (btnOpen) btnOpen.className = filter === 'OPEN' ? 'btn btn-success btn-sm px-3 fw-bold text-white' : 'btn btn-outline-success btn-sm px-3 fw-bold';
-    if (btnAvail) btnAvail.className = filter === 'AVAILABLE' ? 'btn btn-secondary btn-sm px-3 fw-bold rounded-end-pill text-white' : 'btn btn-outline-secondary btn-sm px-3 fw-bold rounded-end-pill';
-
-    this.renderTablesUI();
+  refreshAll() {
+    this.loadPendingOrders();
+    this.loadTables();
+    this.loadActivationRequests();
   }
 
+  // ------------------------------------------------------------------
+  // Queue: activation requests + pending orders
+  // ------------------------------------------------------------------
   async loadPendingOrders() {
     try {
-      this.pendingOrders = await apiGet('/api/v1/cashier/orders/');
-      const currentOrderIds = new Set((this.pendingOrders || []).map((o) => String(o.id)));
-      if (this.knownOrderIds !== null) {
-        const hasNew = [...currentOrderIds].some((id) => !this.knownOrderIds.has(id));
-        if (hasNew) {
-          SoundEffects.playBell();
-        }
-      }
-      this.knownOrderIds = currentOrderIds;
+      this.pendingOrders = (await apiGet('/api/v1/cashier/orders/')) || [];
+      const ids = new Set(this.pendingOrders.map((o) => String(o.id)));
+      if (this.knownOrderIds && [...ids].some((id) => !this.knownOrderIds.has(id))) SoundEffects.playBell();
+      this.knownOrderIds = ids;
       this.renderPendingOrdersUI();
     } catch (e) {
-      console.error('Error loading pending orders:', e);
+      console.error('pending orders', e);
     }
   }
 
   async loadActivationRequests() {
     try {
-      this.activationRequests = await apiGet('/api/v1/cashier/activation-requests/');
-      const currentIds = new Set((this.activationRequests || []).map((r) => String(r.id)));
-      if (this.knownActivationIds !== null) {
-        const hasNew = [...currentIds].some((id) => !this.knownActivationIds.has(id));
-        if (hasNew) {
-          SoundEffects.playBell();
-        }
-      }
-      this.knownActivationIds = currentIds;
+      this.activationRequests = (await apiGet('/api/v1/cashier/activation-requests/')) || [];
+      const ids = new Set(this.activationRequests.map((r) => String(r.id)));
+      if (this.knownActivationIds && [...ids].some((id) => !this.knownActivationIds.has(id))) SoundEffects.playBell();
+      this.knownActivationIds = ids;
       this.renderActivationRequestsUI();
     } catch (e) {
-      console.error('Error loading activation requests:', e);
+      console.error('activation requests', e);
     }
   }
 
-  renderActivationRequestsUI() {
-    this.updatePendingCountBadge();
-    const container = document.getElementById('activation-requests-container');
-    if (!container) return;
+  updatePendingCount() {
+    const total = this.pendingOrders.length + this.activationRequests.length;
+    setCount('pending', total);
+    const label = document.getElementById('pending-total-label');
+    if (label) label.textContent = total;
+  }
 
-    if (!this.activationRequests || this.activationRequests.length === 0) {
-      container.innerHTML = '';
+  renderActivationRequestsUI() {
+    this.updatePendingCount();
+    const el = document.getElementById('activation-requests-container');
+    if (!el) return;
+    el.innerHTML = this.activationRequests
+      .map(
+        (req) => `
+        <article class="queue-card is-activation mb-2">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="min-w-0">
+              <div class="fw-bold">${escapeHtml(req.table_name || req.table_code)}</div>
+              <div class="fs-7 text-tertiary">${escapeHtml(t('table_activation_requested_title'))} &middot; ${escapeHtml(req.guest_count || 2)} ${escapeHtml(t('people'))}</div>
+            </div>
+            <span class="badge-soft tone-info">${escapeHtml(t('badge_open_request'))}</span>
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-primary flex-grow-1" onclick="cashierApp.approveActivation('${escapeHtml(req.id)}')"><i class="fa-solid fa-check" aria-hidden="true"></i>${escapeHtml(t('btn_approve_activation'))}</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="cashierApp.rejectActivation('${escapeHtml(req.id)}')">${escapeHtml(t('btn_reject'))}</button>
+          </div>
+        </article>`
+      )
+      .join('');
+    if (!this.pendingOrders.length) this.renderPendingOrdersUI();
+  }
+
+  renderPendingOrdersUI() {
+    this.updatePendingCount();
+    const el = document.getElementById('pending-orders-container');
+    if (!el) return;
+
+    if (!this.pendingOrders.length) {
+      el.innerHTML = this.activationRequests.length ? '' : emptyState('fa-circle-check', t('all_verified'), t('new_orders_appear_here'));
       return;
     }
 
-    container.innerHTML = this.activationRequests
-      .map(
-        (req) => `
-      <div class="glass-card p-2 p-sm-2.5 mb-2 border-warning border-2 bg-dark bg-opacity-70 shadow-sm animate__animated animate__fadeIn">
-        <div class="d-flex justify-content-between align-items-center mb-1 gap-1">
-          <div class="d-flex align-items-center gap-1.5 flex-wrap">
-            <span class="badge bg-warning text-dark fw-bold px-2 py-0.5" style="font-size:0.8rem;">
-              <i class="fa-solid fa-bell fa-shake me-1"></i> ${req.table_name || req.table_code}
-            </span>
-            <span class="badge bg-dark bg-opacity-75 text-warning border border-warning border-opacity-50 px-1.5 py-0.5" style="font-size:0.72rem;">
-              <i class="fa-solid fa-users me-1"></i>${req.guest_count || 2} ${t('people')}
-            </span>
-          </div>
-          <span class="badge bg-warning text-dark fw-bold px-1.5 py-0.5" style="font-size:0.7rem;">
-            Husu Sesi
-          </span>
-        </div>
-        <div class="d-flex align-items-center justify-content-between gap-2 mt-1">
-          <small class="text-white-50 text-truncate" style="font-size:0.78rem;">
-            <i class="fa-solid fa-qrcode me-1 text-warning"></i>${t('table_activation_requested_title')}
-          </small>
-          <div class="d-flex gap-1.5 ms-auto flex-shrink-0">
-            <button class="btn btn-sm btn-success fw-bold rounded-pill px-2.5 py-1 shadow-sm d-flex align-items-center" style="font-size:0.78rem;" onclick="cashierApp.approveActivation('${req.id}')">
-              <i class="fa-solid fa-check me-1"></i> ${t('btn_approve_activation')}
-            </button>
-            <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width:28px; height:28px; padding:0;" onclick="cashierApp.rejectActivation('${req.id}')" title="${t('cancel')}">
-              <i class="fa-solid fa-xmark small"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-    `
-      )
+    el.innerHTML = this.pendingOrders
+      .map((order) => {
+        const items = (order.items || [])
+          .map(
+            (i) => `
+            <li>
+              <span class="min-w-0"><strong class="tabular">${escapeHtml(i.quantity)}×</strong> ${escapeHtml(i.menu_name_snapshot)}
+                ${i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : ''}
+              </span>
+              <span class="tabular text-secondary-app">${formatMoney(i.subtotal)}</span>
+            </li>`
+          )
+          .join('');
+        return `
+          <article class="queue-card">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="min-w-0">
+                <div class="fw-bold">${escapeHtml(order.table_name || order.table_code)}</div>
+                <div class="fs-7 text-tertiary">${escapeHtml(order.order_code)} &middot; ${escapeHtml(formatTime(order.submitted_at || order.created_at))}</div>
+              </div>
+              <span class="price">${formatMoney(order.grand_total)}</span>
+            </div>
+            <ul class="queue-items">${items}</ul>
+            ${order.customer_note ? `<div class="callout tone-warning py-2 mb-2 fs-7"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i><div>${escapeHtml(order.customer_note)}</div></div>` : ''}
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-danger" onclick="cashierApp.promptReject('${escapeHtml(order.id)}', '${escapeHtml(order.order_code)}')">${escapeHtml(t('btn_reject'))}</button>
+              <button type="button" class="btn btn-sm btn-primary flex-grow-1" onclick="cashierApp.confirmOrder('${escapeHtml(order.id)}', this)"><i class="fa-solid fa-check" aria-hidden="true"></i>${escapeHtml(t('btn_confirm_send'))}</button>
+            </div>
+          </article>`;
+      })
       .join('');
   }
 
@@ -148,7 +201,7 @@ class CashierApp {
     try {
       await apiPost(`/api/v1/cashier/activation-requests/${requestId}/approve/`);
       SoundEffects.playSuccess();
-      showToast(t('session_opened_success') || 'Sesi meza loke ho susesu!', 'success');
+      showToast(t('session_opened_success'), 'success');
       this.loadActivationRequests();
       this.loadTables();
     } catch (e) {
@@ -157,10 +210,16 @@ class CashierApp {
   }
 
   async rejectActivation(requestId) {
-    if (!confirm('Rekuza pedidu loke meza ne\'e?')) return;
+    const ok = await confirmDialog({
+      title: t('reject_activation_title'),
+      message: t('reject_activation_msg'),
+      confirmText: t('btn_reject'),
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
-      await apiPost(`/api/v1/cashier/activation-requests/${requestId}/reject/`, { reason: 'Rekuza hosi Kaixa' });
-      showToast('Pedidu loke meza rekuza ona.', 'info');
+      await apiPost(`/api/v1/cashier/activation-requests/${requestId}/reject/`, { reason: 'Rekuza husi kaixa' });
+      showToast(t('activation_rejected_toast'), 'info');
       this.loadActivationRequests();
       this.loadTables();
     } catch (e) {
@@ -168,1033 +227,604 @@ class CashierApp {
     }
   }
 
+  async confirmOrder(orderId, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      await apiPost(`/api/v1/cashier/orders/${orderId}/confirm/`);
+      showToast(t('order_confirmed_success'), 'success');
+      SoundEffects.playSuccess();
+      this.loadPendingOrders();
+      this.loadTables();
+    } catch (e) {
+      showToast(e.message, 'error');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async promptReject(orderId, orderCode) {
+    const reason = await confirmDialog({
+      title: `${t('reject_modal_title')} ${orderCode}`,
+      message: t('reject_modal_desc'),
+      confirmText: t('btn_confirm_reject'),
+      tone: 'danger',
+      input: { label: t('reject_reason_label'), required: true },
+    });
+    if (!reason) return;
+    try {
+      await apiPost(`/api/v1/cashier/orders/${orderId}/reject/`, { reason });
+      showToast(t('order_rejected_success'), 'info');
+      SoundEffects.playError();
+      this.loadPendingOrders();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Tables
+  // ------------------------------------------------------------------
+  setTableFilter(filter) {
+    this.tableFilter = filter;
+    const map = { ALL: 'filter-table-all', OPEN: 'filter-table-open', AVAILABLE: 'filter-table-avail' };
+    Object.entries(map).forEach(([key, id]) => document.getElementById(id)?.classList.toggle('is-active', key === filter));
+    this.renderTablesUI();
+  }
+
   async loadTables() {
     try {
-      this.tables = await apiGet('/api/v1/cashier/tables/');
-      const billSessions = (this.tables || [])
-        .filter((t) => t.active_session && t.active_session.status === 'BILL_REQUESTED')
-        .map((t) => String(t.active_session.id));
-      const currentBillSet = new Set(billSessions);
-      if (this.knownBillSessionIds !== null) {
-        const hasNewBill = [...currentBillSet].some((id) => !this.knownBillSessionIds.has(id));
-        if (hasNewBill) {
-          SoundEffects.playBell();
-        }
-      }
-      this.knownBillSessionIds = currentBillSet;
+      this.tables = (await apiGet('/api/v1/cashier/tables/')) || [];
+      const bills = new Set(
+        this.tables.filter((tb) => tb.active_session?.status === 'BILL_REQUESTED').map((tb) => String(tb.active_session.id))
+      );
+      if (this.knownBillSessionIds && [...bills].some((id) => !this.knownBillSessionIds.has(id))) SoundEffects.playBell();
+      this.knownBillSessionIds = bills;
       this.renderTablesUI();
       this.updateBillAlertsUI();
     } catch (e) {
-      console.error('Error loading tables:', e);
+      console.error('tables', e);
     }
   }
 
-  renderPendingOrdersUI() {
-    this.updatePendingCountBadge();
-    const container = document.getElementById('pending-orders-container');
-    if (!container) return;
-
-    if (this.pendingOrders.length === 0) {
-      container.innerHTML = `
-        <div class="text-center py-4 text-white-50">
-          <i class="fa-solid fa-circle-check fa-2x text-success mb-2"></i>
-          <h6 class="text-white small mb-1">${t('all_verified')}</h6>
-          <p class="small text-white-50 mb-0" style="font-size:0.75rem;">${t('new_orders_appear_here')}</p>
-        </div>
-      `;
-      return;
-    }
-
-    container.innerHTML = this.pendingOrders
-      .map(
-        (order) => `
-      <div class="glass-card p-2 p-sm-2.5 mb-2 border-warning border-opacity-50 shadow-sm animate__animated animate__fadeIn">
-        <div class="d-flex justify-content-between align-items-center mb-1.5 gap-1">
-          <div class="d-flex align-items-center gap-1.5 flex-wrap">
-            <span class="badge bg-warning text-dark fw-bold px-2 py-0.5" style="font-size:0.8rem;">${order.table_name || order.table_code}</span>
-            <span class="fw-bold text-white small">${order.order_code}</span>
-            <span class="text-white-50 small ms-1" style="font-size:0.72rem;"><i class="fa-regular fa-clock me-0.5"></i>${new Date(order.submitted_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-          </div>
-          <span class="badge bg-warning bg-opacity-25 border border-warning text-warning rounded-pill px-2 py-0.5" style="font-size:0.7rem;">${t('status_waiting')}</span>
-        </div>
-
-        <div class="border border-secondary border-opacity-25 rounded-2 p-1.5 px-2 bg-dark bg-opacity-60 mb-2">
-          <ul class="list-unstyled mb-0" style="font-size:0.8rem;">
-            ${order.items
-              .map(
-                (item) => `
-              <li class="d-flex justify-content-between py-0.5 border-bottom border-secondary border-opacity-25">
-                <span class="text-white text-truncate pe-1"><strong>${item.quantity}x</strong> ${item.menu_name_snapshot} ${item.note ? `<span class="badge bg-warning text-dark ms-1 py-0 px-1" style="font-size:0.68rem;"><i class="fa-solid fa-pen small"></i> ${item.note}</span>` : ''}</span>
-                <span class="fw-semibold text-warning flex-shrink-0">$${item.subtotal}</span>
-              </li>
-            `
-              )
-              .join('')}
-          </ul>
-          ${order.customer_note ? `<div class="mt-1 p-1 bg-danger bg-opacity-20 border border-danger border-opacity-25 rounded small text-danger" style="font-size:0.75rem;"><strong>${t('customer_notes')}</strong> ${order.customer_note}</div>` : ''}
-        </div>
-
-        <div class="d-flex justify-content-between align-items-center gap-2">
-          <div class="fw-bold text-warning fs-6">${t('total')}: $${order.grand_total}</div>
-          <div class="d-flex gap-1.5">
-            <button class="btn btn-sm btn-outline-danger rounded-pill px-2.5 py-1 d-flex align-items-center" style="font-size:0.78rem;" onclick="cashierApp.promptReject('${order.id}', '${order.order_code}')">
-              <i class="fa-solid fa-xmark me-1 small"></i> ${t('btn_reject')}
-            </button>
-            <button class="btn btn-sm btn-success rounded-pill px-2.5 py-1 fw-bold shadow-sm d-flex align-items-center" style="font-size:0.78rem;" onclick="cashierApp.confirmOrder('${order.id}')">
-              <i class="fa-solid fa-check me-1 small"></i> ${t('btn_confirm_send')}
-            </button>
-          </div>
-        </div>
-      </div>
-    `
-      )
-      .join('');
+  sessionState(table) {
+    const s = table.active_session;
+    if (!s) return table.pending_activation ? 'pending' : 'free';
+    const remaining = parseFloat(s.remaining_balance ?? s.bill_total) || 0;
+    if (s.is_fully_paid || s.status === 'PAID' || (remaining <= 0 && parseFloat(s.bill_total) > 0)) return 'paid';
+    if (s.status === 'BILL_REQUESTED') return 'bill';
+    return 'open';
   }
 
   renderTablesUI() {
-    const container = document.getElementById('tables-grid-container');
-    if (!container) return;
+    const el = document.getElementById('tables-grid-container');
+    if (!el) return;
 
-    let filteredTables = this.tables;
-    if (this.tableFilter === 'OPEN') {
-      filteredTables = this.tables.filter((t) => t.active_session !== null);
-    } else if (this.tableFilter === 'AVAILABLE') {
-      filteredTables = this.tables.filter((t) => t.active_session === null);
-    }
+    let list = this.tables;
+    if (this.tableFilter === 'OPEN') list = list.filter((tb) => tb.active_session);
+    if (this.tableFilter === 'AVAILABLE') list = list.filter((tb) => !tb.active_session);
 
-    if (filteredTables.length === 0) {
-      container.innerHTML = `
-        <div class="col-12 text-center py-4 text-white-50">
-          <i class="fa-solid fa-chair fa-2x mb-2 text-secondary"></i>
-          <h6 class="text-white small mb-0">${t('no_orders_history')}</h6>
-        </div>
-      `;
+    if (!list.length) {
+      el.innerHTML = `<div style="grid-column:1/-1">${emptyState('fa-chair', t('no_tables_found'))}</div>`;
       return;
     }
 
-    container.innerHTML = filteredTables
-      .map((table) => {
-        const session = table.active_session;
-        const isOccupied = session !== null;
-        const remaining = session ? parseFloat(session.remaining_balance !== undefined ? session.remaining_balance : session.bill_total) : 0;
-        const isPaid = session && (session.is_fully_paid || session.status === 'PAID' || remaining <= 0);
-        const hasPendingActivation = !isOccupied && table.pending_activation;
+    el.innerHTML = list.map((table) => this.renderTableTile(table)).join('');
+  }
 
-        let cardBorder = 'border-secondary border-opacity-25';
-        if (isOccupied) {
-          cardBorder = isPaid ? 'border-success' : (session.status === 'BILL_REQUESTED' ? 'border-danger' : 'border-primary');
-        } else if (hasPendingActivation) {
-          cardBorder = 'border-warning border-2 shadow-sm';
-        }
+  renderTableTile(table) {
+    const s = table.active_session;
+    const state = this.sessionState(table);
+    const name = escapeHtml(table.display_name);
+    const nameJs = escapeHtml(JSON.stringify(String(table.display_name)));
+    const qrLink = `<a class="btn btn-sm btn-ghost btn-icon" href="/t/${encodeURIComponent(table.qr_token)}/" target="_blank" rel="noopener" title="${escapeHtml(t('open_table_menu'))}" aria-label="${escapeHtml(t('open_table_menu'))}"><i class="fa-solid fa-qrcode"></i></a>`;
 
-        let sessionBadge = '';
-        if (session) {
-          if (isPaid) {
-            sessionBadge = `<span class="badge bg-success text-white rounded-pill px-1.5 py-0.5" style="font-size:0.7rem;"><i class="fa-solid fa-check-circle me-1"></i> ${t('paid_status')}</span>`;
-          } else if (session.status === 'BILL_REQUESTED') {
-            sessionBadge = `<span class="badge bg-danger text-white rounded-pill pulse px-1.5 py-0.5" style="font-size:0.7rem;"><i class="fa-solid fa-receipt me-1"></i> ${t('request_bill')}</span>`;
-          } else {
-            sessionBadge = `<span class="badge bg-info bg-opacity-25 border border-info text-info rounded-pill px-1.5 py-0.5" style="font-size:0.7rem;">${t('active_session')}</span>`;
-          }
-        } else if (hasPendingActivation) {
-          sessionBadge = `<span class="badge bg-warning text-dark rounded-pill pulse px-1.5 py-0.5" style="font-size:0.7rem;"><i class="fa-solid fa-bell fa-shake me-1"></i> Husu Loke</span>`;
-        } else {
-          sessionBadge = `<span class="badge bg-secondary bg-opacity-25 border border-secondary text-secondary rounded-pill px-1.5 py-0.5" style="font-size:0.7rem;">${t('filter_avail_tables')}</span>`;
-        }
+    const badge = {
+      free: `<span class="badge-soft">${escapeHtml(t('filter_avail_tables'))}</span>`,
+      pending: `<span class="badge-soft tone-info">${escapeHtml(t('badge_open_request'))}</span>`,
+      open: `<span class="badge-soft tone-info">${escapeHtml(t('active_session'))}</span>`,
+      bill: `<span class="badge-soft tone-danger">${escapeHtml(t('request_bill'))}</span>`,
+      paid: `<span class="badge-soft tone-success">${escapeHtml(t('paid_status'))}</span>`,
+    }[state];
 
-        return `
-        <div class="col-12 col-sm-6 col-xl-4 mb-2">
-          <div class="glass-card p-2 p-sm-2.5 h-100 ${cardBorder} d-flex flex-column shadow-sm">
-            <div class="d-flex justify-content-between align-items-center mb-1 gap-1">
-              <div class="text-truncate">
-                <span class="fw-bold text-white fs-6 text-truncate d-block">${table.display_name}</span>
-                <span class="text-white-50" style="font-size:0.72rem;">${table.table_code} &bull; ${table.capacity || 4} <i class="fa-solid fa-user-group ms-0.5 small"></i></span>
-              </div>
-              <div class="flex-shrink-0">${sessionBadge}</div>
-            </div>
+    let body = '';
+    let actions = '';
+    if (s) {
+      const remaining = parseFloat(s.remaining_balance ?? s.bill_total) || 0;
+      body = `
+        <div class="table-tile-stats">
+          <span>${escapeHtml(s.guest_count)} ${escapeHtml(t('people'))} &middot; ${escapeHtml(s.orders_count)} ${escapeHtml(t('orders_short'))}</span>
+          <strong class="tabular">${formatMoney(state === 'paid' ? s.bill_total : remaining)}</strong>
+        </div>`;
+      actions =
+        state === 'paid'
+          ? `<button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.viewReceiptForSession('${escapeHtml(s.id)}')"><i class="fa-solid fa-receipt" aria-hidden="true"></i>${escapeHtml(t('receipt_title'))}</button>`
+          : `<button type="button" class="btn btn-sm btn-primary" onclick='cashierApp.openPaymentModal(${escapeHtml(JSON.stringify(String(s.id)))}, ${nameJs})' ${remaining <= 0 ? 'disabled' : ''}><i class="fa-solid fa-cash-register" aria-hidden="true"></i>${escapeHtml(t('btn_pay_pos'))}</button>`;
+      actions += qrLink;
+      actions += `<button type="button" class="btn btn-sm btn-ghost btn-icon" onclick='cashierApp.handleCloseSession(${escapeHtml(JSON.stringify(String(s.id)))}, ${nameJs}, ${state === 'paid' || remaining <= 0 ? 'true' : 'false'})' title="${escapeHtml(t('close_session'))}" aria-label="${escapeHtml(t('close_session'))}"><i class="fa-solid fa-lock"></i></button>`;
+    } else if (state === 'pending') {
+      body = `<div class="fs-7 text-secondary-app">${escapeHtml(table.pending_activation.guest_count || 2)} ${escapeHtml(t('people'))} &middot; ${escapeHtml(t('waiting_verification'))}</div>`;
+      actions = `<button type="button" class="btn btn-sm btn-primary" onclick="cashierApp.approveActivation('${escapeHtml(table.pending_activation.id)}')"><i class="fa-solid fa-check" aria-hidden="true"></i>${escapeHtml(t('btn_approve_activation'))}</button>${qrLink}`;
+    } else {
+      body = `<div class="fs-7 text-tertiary">${escapeHtml(t('table_empty'))}</div>`;
+      actions = `<button type="button" class="btn btn-sm btn-secondary-app" onclick='cashierApp.openSessionModal(${escapeHtml(JSON.stringify(String(table.id)))}, ${nameJs})'><i class="fa-solid fa-door-open" aria-hidden="true"></i>${escapeHtml(t('btn_open_session'))}</button>${qrLink}`;
+    }
 
-            ${
-              isOccupied
-                ? `
-              <div class="p-1.5 px-2 bg-dark bg-opacity-60 rounded-2 small my-1.5 border border-secondary border-opacity-25">
-                <div class="d-flex justify-content-between align-items-center mb-0.5" style="font-size:0.75rem;">
-                  <span class="text-white-50">${t('guests')}: <strong class="text-white">${session.guest_count}</strong></span>
-                  <span class="text-white-50">${t('total_orders')}: <strong class="text-white">${session.orders_count}</strong></span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center border-top border-secondary border-opacity-25 pt-1" style="font-size:0.78rem;">
-                  <span class="text-white-50">${t('remaining_bill')}:</span>
-                  <span class="fw-bold ${isPaid ? 'text-success' : 'text-warning'}">
-                    $${session.bill_total}
-                    ${isPaid ? ` <span class="badge bg-success-subtle text-success small px-1 py-0">${t('paid_status')}</span>` : (remaining < parseFloat(session.bill_total) ? ` <small class="text-danger">($${remaining.toFixed(2)})</small>` : '')}
-                  </span>
-                </div>
-              </div>
-
-              <div class="d-flex gap-1.5 mt-auto pt-1">
-                ${
-                  isPaid
-                    ? `
-                  <button class="btn btn-sm btn-success flex-fill fw-bold rounded-pill py-1 px-2 d-flex align-items-center justify-content-center" style="font-size:0.78rem;" onclick="cashierApp.viewReceiptForSession('${session.id}')" title="${t('receipt_title')}">
-                    <i class="fa-solid fa-receipt me-1"></i> ${t('receipt_title')}
-                  </button>
-                `
-                    : `
-                  <button class="btn btn-sm btn-warning flex-fill fw-bold rounded-pill text-dark shadow-sm py-1 px-2 text-truncate d-flex align-items-center justify-content-center" style="font-size:0.78rem;" onclick="cashierApp.openPaymentModal('${session.id}', '${table.display_name}')">
-                    <i class="fa-solid fa-cash-register me-1"></i> ${t('btn_pay_pos')} ($${remaining.toFixed(2)})
-                  </button>
-                `
-                }
-                
-                <a href="/t/${table.qr_token}/" target="_blank" class="btn btn-sm btn-outline-info rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width:28px; height:28px; padding:0;" title="QR Menu">
-                  <i class="fa-solid fa-qrcode small"></i>
-                </a>
-
-                <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width:28px; height:28px; padding:0;" title="${t('close')}" onclick="cashierApp.handleCloseSession('${session.id}', '${table.display_name}')">
-                  <i class="fa-solid fa-lock small"></i>
-                </button>
-              </div>
-            `
-                : `
-              <div class="my-1">
-                ${
-                  hasPendingActivation
-                    ? `<div class="p-1.5 px-2 bg-dark bg-opacity-70 border border-warning border-opacity-50 rounded-2 shadow-sm">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                          <span class="badge bg-warning text-dark fw-bold px-1.5 py-0.5" style="font-size:0.7rem;">
-                            <i class="fa-solid fa-bell fa-shake me-1"></i>Husu Loke Sesi
-                          </span>
-                          <span class="badge bg-dark border border-warning border-opacity-40 text-warning px-1.5 py-0.5" style="font-size:0.7rem;">
-                            <i class="fa-solid fa-users me-1"></i>${table.pending_activation.guest_count || 2} Ema
-                          </span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between text-white-50" style="font-size:0.72rem;">
-                          <span><i class="fa-solid fa-qrcode text-warning me-1"></i>Kliente scan QR</span>
-                          <span class="text-warning fw-semibold"><i class="fa-regular fa-clock me-1"></i>Hein verifikasaun</span>
-                        </div>
-                       </div>`
-                    : `<div class="py-1 text-white-50 text-center" style="font-size:0.78rem;"><i class="fa-solid fa-chair me-1 text-secondary"></i> ${t('table_empty')}</div>`
-                }
-              </div>
-              <div class="d-flex gap-1.5 mt-auto pt-1">
-                ${
-                  hasPendingActivation
-                    ? `<button class="btn btn-sm btn-success flex-fill fw-bold rounded-pill shadow-sm py-1 px-2 d-flex align-items-center justify-content-center text-truncate" style="font-size:0.78rem;" onclick="cashierApp.approveActivation('${table.pending_activation.id}')">
-                        <i class="fa-solid fa-check-circle me-1"></i> ${t('btn_approve_activation')}
-                       </button>`
-                    : `<button class="btn btn-sm btn-outline-warning flex-fill fw-bold rounded-pill py-1 px-2 d-flex align-items-center justify-content-center text-truncate" style="font-size:0.78rem;" onclick="cashierApp.openSessionModal('${table.id}', '${table.display_name}')">
-                        <i class="fa-solid fa-door-open me-1"></i> ${t('btn_open_session')}
-                       </button>`
-                }
-                <a href="/t/${table.qr_token}/" target="_blank" class="btn btn-sm btn-outline-secondary rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width:28px; height:28px; padding:0;" title="QR">
-                  <i class="fa-solid fa-qrcode small"></i>
-                </a>
-              </div>
-            `
-            }
+    return `
+      <article class="table-tile is-${state}">
+        <div class="table-tile-head">
+          <div class="min-w-0">
+            <div class="table-tile-name truncate">${name}</div>
+            <div class="table-tile-meta">${escapeHtml(table.table_code)}${table.capacity ? ` &middot; ${escapeHtml(table.capacity)} ${escapeHtml(t('seats'))}` : ''}</div>
           </div>
+          ${badge}
         </div>
-      `;
-      })
-      .join('');
+        ${body}
+        <div class="table-tile-actions">${actions}</div>
+      </article>`;
   }
 
   updateBillAlertsUI() {
-    const alertsContainer = document.getElementById('bill-alerts-container');
-    const badge = document.getElementById('bill-alerts-count');
-
-    const billTables = (this.tables || []).filter((tbl) => tbl.active_session && tbl.active_session.status === 'BILL_REQUESTED');
-
-    if (badge) {
-      if (billTables.length > 0) {
-        badge.textContent = billTables.length;
-        badge.style.display = 'inline-block';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-
-    if (!alertsContainer) return;
-
-    if (billTables.length === 0) {
-      alertsContainer.innerHTML = `
-        <div class="col-12 text-center py-5 text-white-50">
-          <i class="fa-solid fa-bell-slash fa-3x mb-2 text-secondary"></i>
-          <h6 class="text-white">${t('no_bill_alerts')}</h6>
-        </div>
-      `;
+    const bills = this.tables.filter((tb) => tb.active_session?.status === 'BILL_REQUESTED');
+    setCount('bills', bills.length);
+    const el = document.getElementById('bill-alerts-container');
+    if (!el) return;
+    if (!bills.length) {
+      el.innerHTML = `<div style="grid-column:1/-1">${emptyState('fa-bell-slash', t('no_bill_alerts'))}</div>`;
       return;
     }
-
-    alertsContainer.innerHTML = billTables
-      .map(
-        (tbl) => `
-      <div class="col-12 col-md-6 col-lg-4 mb-2">
-        <div class="glass-card p-3 border-danger border-2 shadow-lg animate__animated animate__pulse">
-          <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
-            <div>
-              <h5 class="fw-bold mb-0 text-white">${tbl.display_name}</h5>
-              <small class="text-white-50">${tbl.table_code} &bull; ${tbl.active_session.guest_count} ${t('people')}</small>
+    el.innerHTML = bills
+      .map((tb) => {
+        const s = tb.active_session;
+        const remaining = parseFloat(s.remaining_balance ?? s.bill_total) || 0;
+        return `
+          <article class="table-tile is-bill">
+            <div class="table-tile-head">
+              <div class="min-w-0">
+                <div class="table-tile-name truncate">${escapeHtml(tb.display_name)}</div>
+                <div class="table-tile-meta">${escapeHtml(tb.table_code)} &middot; ${escapeHtml(s.guest_count)} ${escapeHtml(t('people'))}</div>
+              </div>
+              <span class="badge-soft tone-danger">${escapeHtml(formatTime(s.bill_requested_at))}</span>
             </div>
-            <span class="badge bg-danger text-white rounded-pill px-2 py-1 shadow-sm pulse">
-              <i class="fa-solid fa-receipt me-1"></i>${t('request_bill')}!
-            </span>
-          </div>
-          <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-dark bg-opacity-60 rounded-3 border border-secondary border-opacity-25">
-            <span class="text-white-50 small">${t('total')}:</span>
-            <span class="fs-4 fw-bold text-warning">$${tbl.active_session.bill_total}</span>
-          </div>
-          <button class="btn btn-warning w-100 fw-bold rounded-pill text-dark shadow d-flex align-items-center justify-content-center py-2" onclick="cashierApp.openPaymentModal('${tbl.active_session.id}', '${tbl.display_name}')">
-            <i class="fa-solid fa-cash-register me-1.5"></i> ${t('btn_pay_pos')}
-          </button>
-        </div>
-      </div>
-    `
-      )
+            <div class="price fs-4">${formatMoney(remaining)}</div>
+            <button type="button" class="btn btn-primary" onclick='cashierApp.openPaymentModal(${escapeHtml(JSON.stringify(String(s.id)))}, ${escapeHtml(JSON.stringify(String(tb.display_name)))})'><i class="fa-solid fa-cash-register" aria-hidden="true"></i>${escapeHtml(t('btn_pay_pos'))}</button>
+          </article>`;
+      })
       .join('');
-  }
-
-  // --- PENDING COUNT BADGE HELPER ---
-  updatePendingCountBadge() {
-    const countBadge = document.getElementById('pending-count-badge');
-    if (!countBadge) return;
-    const pendingOrdersCount = (this.pendingOrders || []).length;
-    const pendingActivationsCount = (this.activationRequests || []).length;
-    const totalPending = pendingOrdersCount + pendingActivationsCount;
-    if (totalPending > 0) {
-      countBadge.textContent = totalPending;
-      countBadge.style.display = 'inline-block';
-    } else {
-      countBadge.textContent = '0';
-      countBadge.style.display = 'none';
-    }
-  }
-
-  // --- HISTORY SUBTAB SWITCHING ---
-  switchHistorySubTab(tab) {
-    this.currentHistorySubTab = tab;
-    const btnOrders = document.getElementById('subtab-btn-orders');
-    const btnBills = document.getElementById('subtab-btn-bills');
-    const viewOrders = document.getElementById('subview-orders-history');
-    const viewBills = document.getElementById('subview-bills-history');
-
-    if (tab === 'orders') {
-      if (btnOrders) { btnOrders.classList.add('active'); btnOrders.classList.remove('text-white-50'); }
-      if (btnBills) { btnBills.classList.remove('active'); btnBills.classList.add('text-white-50'); }
-      if (viewOrders) viewOrders.style.display = 'block';
-      if (viewBills) viewBills.style.display = 'none';
-      this.loadOrdersHistory();
-    } else {
-      if (btnBills) { btnBills.classList.add('active'); btnBills.classList.remove('text-white-50'); }
-      if (btnOrders) { btnOrders.classList.remove('active'); btnOrders.classList.add('text-white-50'); }
-      if (viewBills) viewBills.style.display = 'block';
-      if (viewOrders) viewOrders.style.display = 'none';
-      this.loadBillsHistory();
-    }
-  }
-
-  refreshActiveHistoryTab() {
-    if (this.currentHistorySubTab === 'bills') {
-      this.loadBillsHistory();
-    } else {
-      this.loadOrdersHistory();
-    }
-  }
-
-  // --- ORDERS HISTORY ---
-  setOrdersDateFilter(range) {
-    this.ordersDateFilter = range;
-    const btnToday = document.getElementById('order-date-today');
-    const btnAll = document.getElementById('order-date-all');
-    if (range === 'today') {
-      btnToday?.classList.add('active');
-      btnAll?.classList.remove('active');
-    } else {
-      btnAll?.classList.add('active');
-      btnToday?.classList.remove('active');
-    }
-    this.loadOrdersHistory();
-  }
-
-  loadTodayOrdersHistory() {
-    if (this.currentHistorySubTab === 'bills') {
-      this.loadBillsHistory();
-    } else {
-      this.loadOrdersHistory();
-    }
-  }
-
-  async loadOrdersHistory() {
-    const tbody = document.getElementById('orders-history-tbody');
-    if (!tbody) return;
-
-    const range = this.ordersDateFilter || 'today';
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-white-50"><i class="fa-solid fa-spinner fa-spin me-2"></i>${t('loading_history') || 'Karga hela dadus pedidu...'}</td></tr>`;
-
-    try {
-      const orders = await apiGet(`/api/v1/cashier/orders/history/?date_range=${range}`);
-      this.ordersHistoryData = orders || [];
-      this.filterOrdersHistory();
-    } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>Erro karga istóriku pedidu.</td></tr>`;
-    }
-  }
-
-  filterOrdersHistory() {
-    const statusVal = document.getElementById('order-status-filter')?.value || 'ALL';
-    const q = (document.getElementById('order-history-search')?.value || '').toLowerCase().trim();
-
-    let list = this.ordersHistoryData || [];
-
-    if (statusVal !== 'ALL') {
-      list = list.filter((o) => o.status === statusVal);
-    }
-
-    if (q) {
-      list = list.filter(
-        (o) =>
-          (o.order_code && o.order_code.toLowerCase().includes(q)) ||
-          (o.table_name && o.table_name.toLowerCase().includes(q)) ||
-          (o.table_code && o.table_code.toLowerCase().includes(q)) ||
-          (o.session_code && o.session_code.toLowerCase().includes(q)) ||
-          (o.items_summary && o.items_summary.toLowerCase().includes(q))
-      );
-    }
-
-    this.renderOrdersHistoryTable(list);
-  }
-
-  renderOrdersHistoryTable(orders) {
-    const tbody = document.getElementById('orders-history-tbody');
-    if (!tbody) return;
-
-    if (!orders || orders.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-white-50"><i class="fa-solid fa-inbox fa-2x mb-2 text-secondary d-block"></i>Laiha pedidu tuir peskiza ne'e.</td></tr>`;
-      return;
-    }
-
-    const statusBadge = (s) => {
-      switch (s) {
-        case 'WAITING_CASHIER_CONFIRMATION':
-          return `<span class="badge bg-warning bg-opacity-25 border border-warning text-warning px-2 py-0.5" style="font-size:0.72rem;">⏳ Hein Kaixa</span>`;
-        case 'CONFIRMED':
-          return `<span class="badge bg-info bg-opacity-25 border border-info text-info px-2 py-0.5" style="font-size:0.72rem;">🟡 Konfirmadu</span>`;
-        case 'PREPARING':
-          return `<span class="badge bg-primary bg-opacity-25 border border-primary text-primary px-2 py-0.5" style="font-size:0.72rem;">🔥 Tein</span>`;
-        case 'READY':
-          return `<span class="badge bg-warning text-dark px-2 py-0.5" style="font-size:0.72rem;">🟢 Prontu</span>`;
-        case 'SERVED':
-          return `<span class="badge bg-success bg-opacity-25 border border-success text-success px-2 py-0.5" style="font-size:0.72rem;">🍽️ Entrega</span>`;
-        case 'COMPLETED':
-          return `<span class="badge bg-success text-white px-2 py-0.5" style="font-size:0.72rem;">✅ Kompletu</span>`;
-        case 'REJECTED':
-          return `<span class="badge bg-danger text-white px-2 py-0.5" style="font-size:0.72rem;">❌ Rekuza</span>`;
-        case 'CANCELLED':
-          return `<span class="badge bg-secondary text-white px-2 py-0.5" style="font-size:0.72rem;">Kansela</span>`;
-        default:
-          return `<span class="badge bg-secondary px-2 py-0.5" style="font-size:0.72rem;">${s}</span>`;
-      }
-    };
-
-    tbody.innerHTML = orders
-      .map(
-        (o) => `
-      <tr class="align-middle">
-        <td>
-          <div class="fw-semibold text-white small">${o.created_at}</div>
-          <div class="text-white-50" style="font-size:0.7rem;">${o.created_date || ''}</div>
-        </td>
-        <td>
-          <strong class="text-white small">${o.order_code}</strong>
-          ${o.customer_note ? `<div class="text-warning text-truncate" style="font-size:0.7rem; max-width:140px;" title="${o.customer_note}"><i class="fa-regular fa-note-sticky me-1"></i>${o.customer_note}</div>` : ''}
-          ${o.rejection_reason ? `<div class="text-danger text-truncate" style="font-size:0.7rem; max-width:140px;" title="${o.rejection_reason}"><i class="fa-solid fa-ban me-1"></i>${o.rejection_reason}</div>` : ''}
-        </td>
-        <td>
-          <span class="badge bg-dark border border-secondary text-white">${o.table_name || o.table_code}</span>
-          <div class="text-white-50" style="font-size:0.68rem;">${o.session_code || ''}</div>
-        </td>
-        <td class="text-white-50 small">${o.items_summary}</td>
-        <td class="fw-bold text-warning small">$${o.grand_total}</td>
-        <td>${statusBadge(o.status)}</td>
-        <td class="text-end">
-          ${
-            o.can_print_receipt
-              ? `<button class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-0.5 fw-semibold shadow-sm d-inline-flex align-items-center" style="font-size:0.75rem;" onclick="cashierApp.viewReceiptForSession('${o.session_id}')" title="Print Resibu">
-                  <i class="fa-solid fa-print me-1"></i> ${t('btn_print_receipt')}
-                 </button>`
-              : `<span class="badge bg-dark border border-secondary text-white-50" style="font-size:0.7rem;">-</span>`
-          }
-        </td>
-      </tr>
-    `
-      )
-      .join('');
-  }
-
-  // --- BILLS & RECEIPTS HISTORY ---
-  setBillsDateFilter(range) {
-    this.billsDateFilter = range;
-    const btnToday = document.getElementById('bill-date-today');
-    const btnAll = document.getElementById('bill-date-all');
-    if (range === 'today') {
-      btnToday?.classList.add('active');
-      btnAll?.classList.remove('active');
-    } else {
-      btnAll?.classList.add('active');
-      btnToday?.classList.remove('active');
-    }
-    this.loadBillsHistory();
-  }
-
-  async loadBillsHistory() {
-    const tbody = document.getElementById('bills-history-tbody');
-    if (!tbody) return;
-
-    const range = this.billsDateFilter || 'today';
-    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-white-50"><i class="fa-solid fa-spinner fa-spin me-2"></i>${t('loading_history') || 'Karga hela dadus resibu...'}</td></tr>`;
-
-    try {
-      const bills = await apiGet(`/api/v1/cashier/bills/history/?date_range=${range}`);
-      this.billsHistoryData = bills || [];
-      this.filterBillsHistory();
-    } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3 text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>Erro karga istóriku konta & resibu.</td></tr>`;
-    }
-  }
-
-  filterBillsHistory() {
-    const q = (document.getElementById('bill-history-search')?.value || '').toLowerCase().trim();
-    let list = this.billsHistoryData || [];
-
-    if (q) {
-      list = list.filter(
-        (b) =>
-          (b.payment_code && b.payment_code.toLowerCase().includes(q)) ||
-          (b.table_name && b.table_name.toLowerCase().includes(q)) ||
-          (b.table_code && b.table_code.toLowerCase().includes(q)) ||
-          (b.cashier_name && b.cashier_name.toLowerCase().includes(q))
-      );
-    }
-
-    // Compute total revenue badge
-    const totalRev = list.reduce((sum, b) => sum + parseFloat(b.amount || 0), 0);
-    const badgeEl = document.getElementById('bills-total-revenue-badge');
-    if (badgeEl) {
-      badgeEl.textContent = `${t('total_revenue_badge') || 'Totál'}: $${totalRev.toFixed(2)}`;
-    }
-
-    this.renderBillsHistoryTable(list);
-  }
-
-  renderBillsHistoryTable(bills) {
-    const tbody = document.getElementById('bills-history-tbody');
-    if (!tbody) return;
-
-    if (!bills || bills.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-white-50"><i class="fa-solid fa-receipt fa-2x mb-2 text-secondary d-block"></i>${t('no_bills_found') || 'Laiha dadus konta ka resibu.'}</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = bills
-      .map(
-        (b) => `
-      <tr class="align-middle">
-        <td>
-          <div class="fw-semibold text-white small">${b.paid_at_time}</div>
-          <div class="text-white-50" style="font-size:0.7rem;">${b.paid_at_date}</div>
-        </td>
-        <td>
-          <strong class="text-warning small">${b.payment_code}</strong>
-        </td>
-        <td>
-          <span class="badge bg-dark border border-secondary text-white">${b.table_name || b.table_code}</span>
-        </td>
-        <td>
-          <span class="badge bg-secondary bg-opacity-40 text-light px-2 py-0.5" style="font-size:0.72rem;">${b.method || 'Cash'}</span>
-        </td>
-        <td class="fw-bold text-success small">$${b.amount}</td>
-        <td>
-          <div class="small text-white-50" style="font-size:0.75rem;">Simu: <span class="text-white fw-semibold">$${b.tendered_amount}</span></div>
-          <div class="small text-white-50" style="font-size:0.75rem;">Troku: <span class="text-success fw-semibold">$${b.change_amount}</span></div>
-        </td>
-        <td class="text-white-50 small">${b.cashier_name}</td>
-        <td class="text-end">
-          <button class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-1 fw-bold shadow-sm d-inline-flex align-items-center" style="font-size:0.78rem;" onclick="cashierApp.viewReceiptForSession('${b.session_id}')" title="Print Resibu">
-            <i class="fa-solid fa-print me-1.5"></i> ${t('btn_print_receipt')}
-          </button>
-        </td>
-      </tr>
-    `
-      )
-      .join('');
-  }
-
-  async loadShiftSummary() {
-    try {
-      const data = await apiGet('/api/v1/cashier/shift/summary/');
-      const cashEl = document.getElementById('shift-cash-total');
-      const otherEl = document.getElementById('shift-other-total');
-      const grandEl = document.getElementById('shift-grand-total');
-      const paidSessionsEl = document.getElementById('shift-paid-sessions-count');
-      const completedOrdersEl = document.getElementById('shift-completed-orders-count');
-      const timeEl = document.getElementById('shift-report-timestamp');
-
-      if (cashEl) cashEl.textContent = `$${data.cash_total}`;
-      if (otherEl) otherEl.textContent = `$${data.other_total}`;
-      if (grandEl) grandEl.textContent = `$${data.grand_total}`;
-      if (paidSessionsEl) paidSessionsEl.textContent = `${data.paid_sessions_count} Meza`;
-      if (completedOrdersEl) completedOrdersEl.textContent = `${data.completed_orders_count} Pedidu`;
-      if (timeEl) timeEl.textContent = data.timestamp;
-
-      this.currentShiftData = data;
-    } catch (e) {
-      console.error('Error loading shift summary:', e);
-    }
-  }
-
-  printShiftReport() {
-    const data = this.currentShiftData || {};
-    const printWindow = window.open('', '_blank', 'width=380,height=600');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Z-Report Shift Close - Celvass Resto &amp; Bar</title>
-        <style>
-          @page { size: 80mm auto; margin: 0mm; }
-          html, body {
-            margin: 0; padding: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px; line-height: 1.25;
-            background: #fff; color: #000;
-            width: 76mm; max-width: 100%;
-          }
-          .text-center { text-align: center; }
-          .text-start { text-align: left; }
-          .text-end { text-align: right; }
-          .fw-bold { font-weight: bold; }
-          .d-flex { display: flex; justify-content: space-between; }
-          .border-top { border-top: 1px dashed #000; }
-          .border-bottom { border-bottom: 1px dashed #000; }
-          .my-1 { margin: 4px 0; }
-          .my-2 { margin: 8px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="text-center">
-          <h4 style="margin: 0; font-weight: bold;">CELVASS RESTO &amp; BAR</h4>
-          <small>Praia dos Coqueiros, Dili</small><br>
-          <strong style="display: block; margin-top: 4px;">*** RELATÓRIU FECHU KAIXA (Z-REPORT) ***</strong>
-        </div>
-        <div class="border-top border-bottom my-2 text-start">
-          <div><strong>Data:</strong> ${data.timestamp || new Date().toLocaleString()}</div>
-          <div><strong>Status:</strong> FECHU OFISIÁL</div>
-        </div>
-        <div class="my-2">
-          <div class="d-flex"><span>OSAN-MARAN (CASH):</span><strong class="text-end">$${data.cash_total || '0.00'}</strong></div>
-          <div class="d-flex"><span>KARTAUN / OUTROS:</span><strong class="text-end">$${data.other_total || '0.00'}</strong></div>
-          <div class="border-top my-1"></div>
-          <div class="d-flex fw-bold"><span>TOTÁL RENDIMENTU:</span><strong class="text-end">$${data.grand_total || '0.00'}</strong></div>
-        </div>
-        <div class="border-top my-2 text-start">
-          <div class="d-flex"><span>Meza ne'ebé Selu:</span><span>${data.paid_sessions_count || 0}</span></div>
-          <div class="d-flex"><span>Pedidu ne'ebé Remata:</span><span>${data.completed_orders_count || 0}</span></div>
-          <div class="d-flex"><span>Totál Transasaun:</span><span>${data.payments_count || 0}</span></div>
-        </div>
-        <div class="text-center my-2" style="font-size: 10px; color: #555;">
-          <p>Verifikadu &amp; Arkivadu ho Susesu.<br>Sistema PWA Celvass Resto &amp; Bar</p>
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        <\/script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  }
-
-  async confirmOrder(orderId) {
-    try {
-      await apiPost(`/api/v1/cashier/orders/${orderId}/confirm/`);
-      this.loadPendingOrders();
-      this.loadTables();
-      showToast('Pedidu konfirma no haruka ba KDS Dapur!', 'success');
-      SoundEffects.playSuccess();
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
-  }
-
-  promptReject(orderId, orderCode) {
-    this.selectedOrderForReject = orderId;
-    document.getElementById('reject-order-code').textContent = orderCode;
-    document.getElementById('reject-reason-input').value = '';
-    const modal = new bootstrap.Modal(document.getElementById('rejectOrderModal'));
-    modal.show();
-  }
-
-  async submitRejectOrder() {
-    const reason = document.getElementById('reject-reason-input').value.trim();
-    if (!reason) {
-      showToast('Favór fó razaun rekuza!', 'warning');
-      return;
-    }
-
-    try {
-      await apiPost(`/api/v1/cashier/orders/${this.selectedOrderForReject}/reject/`, { reason });
-      bootstrap.Modal.getInstance(document.getElementById('rejectOrderModal')).hide();
-      this.loadPendingOrders();
-      showToast('Pedidu rekuza ona no la prosesa iha dapur.', 'info');
-      SoundEffects.playError();
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
   }
 
   openSessionModal(tableId, tableName) {
     this.selectedTableId = tableId;
     document.getElementById('open-session-table-name').textContent = tableName;
     document.getElementById('open-session-guests').value = '2';
-    const modal = new bootstrap.Modal(document.getElementById('openSessionModal'));
-    modal.show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('openSessionModal')).show();
   }
 
   async submitOpenSession() {
-    const guests = document.getElementById('open-session-guests').value;
+    const raw = document.getElementById('open-session-guests').value;
+    const guests = parseInt(raw, 10);
+    if (!Number.isInteger(guests) || guests < 1 || guests > 25) {
+      showToast(t('guest_count_hint'), 'warning');
+      return;
+    }
     try {
-      await apiPost(`/api/v1/cashier/tables/${this.selectedTableId}/open-session/`, {
-        guest_count: parseInt(guests) || 1,
-      });
-      bootstrap.Modal.getInstance(document.getElementById('openSessionModal')).hide();
-      this.loadTables();
-      showToast('Sesi meza loke ho susesu!', 'success');
+      await apiPost(`/api/v1/cashier/tables/${this.selectedTableId}/open-session/`, { guest_count: guests });
+      bootstrap.Modal.getInstance(document.getElementById('openSessionModal'))?.hide();
+      showToast(t('session_opened_success'), 'success');
       SoundEffects.playSuccess();
+      this.loadTables();
     } catch (e) {
       showToast(e.message, 'error');
     }
   }
 
+  async handleCloseSession(sessionId, tableName, isSettled) {
+    const ok = await confirmDialog({
+      title: `${t('close_session')} · ${tableName}`,
+      message: isSettled ? t('close_session_msg') : t('close_session_unpaid_msg'),
+      confirmText: t('close_session'),
+      tone: isSettled ? 'primary' : 'danger',
+    });
+    if (!ok) return;
+    try {
+      await apiPost(`/api/v1/cashier/table-sessions/${sessionId}/close/`);
+      showToast(`${t('session_closed')} ${tableName}`, 'info');
+      this.loadTables();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Payment
+  // ------------------------------------------------------------------
   openPaymentModal(sessionId, tableName) {
-    this.currentPaymentSessionId = sessionId;
-
-    const table = this.tables.find((t) => t.active_session && t.active_session.id === sessionId);
-    const session = table ? table.active_session : null;
-
+    const table = this.tables.find((tb) => tb.active_session && String(tb.active_session.id) === String(sessionId));
+    const session = table?.active_session;
     if (!session) {
-      showToast('Sesi meza la hetan.', 'error');
+      showToast(t('RESOURCE_NOT_FOUND'), 'error');
       return;
     }
 
-    const remaining = parseFloat(session.remaining_balance !== undefined ? session.remaining_balance : session.bill_total) || 0;
+    this.currentPaymentSessionId = sessionId;
+    this.paymentIdempotencyKey = crypto?.randomUUID ? crypto.randomUUID() : `pay_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const remaining = parseFloat(session.remaining_balance ?? session.bill_total) || 0;
+    this.currentBillAmount = remaining;
 
     document.getElementById('pos-table-name').textContent = tableName;
-    document.getElementById('pos-bill-total').textContent = `$${remaining.toFixed(2)}`;
+    document.getElementById('pos-bill-total').textContent = formatMoney(remaining);
+    document.getElementById('pos-payment-method').value = 'CASH';
     document.getElementById('pos-tendered-amount').value = remaining.toFixed(2);
-    this.currentBillAmount = remaining;
-    this.calculateChange();
+    document.getElementById('pos-paid-status').textContent =
+      parseFloat(session.total_paid) > 0
+        ? `${t('already_paid')}: ${formatMoney(session.total_paid)} · ${t('total')}: ${formatMoney(session.bill_total)}`
+        : `${t('total')}: ${formatMoney(session.bill_total)}`;
 
-    const statusEl = document.getElementById('pos-paid-status');
-    if (statusEl) {
-      if (session.total_paid && parseFloat(session.total_paid) > 0) {
-        statusEl.textContent = `Selu tiha ona: $${session.total_paid} | Totál Pedidu: $${session.bill_total}`;
-      } else {
-        statusEl.textContent = `Totál Pedidu: $${session.bill_total}`;
-      }
-    }
+    const items = session.items || [];
+    document.getElementById('pos-order-items-container').innerHTML = items.length
+      ? items
+          .map(
+            (i) => `
+            <div class="d-flex justify-content-between gap-2 py-1 fs-7">
+              <span class="min-w-0"><strong class="tabular">${escapeHtml(i.quantity)}×</strong> ${escapeHtml(i.name)}
+                <span class="d-block text-tertiary fs-8">${escapeHtml(i.order_code)}${i.note ? ` · ${escapeHtml(i.note)}` : ''}</span>
+              </span>
+              <span class="tabular fw-semibold">${formatMoney(i.subtotal)}</span>
+            </div>`
+          )
+          .join('')
+      : emptyState('fa-receipt', t('no_items_to_pay'));
 
-    const itemsContainer = document.getElementById('pos-order-items-container');
-    if (itemsContainer) {
-      if (!session.items || session.items.length === 0) {
-        itemsContainer.innerHTML = '<div class="text-center py-3 text-white-50 small">Laiha item pedidu atu selu.</div>';
-      } else {
-        itemsContainer.innerHTML = `
-          <table class="table table-sm table-dark table-borderless mb-0 small">
-            <thead class="border-bottom border-secondary text-white-50">
-              <tr>
-                <th>Item</th>
-                <th class="text-center">Qtd</th>
-                <th class="text-end">Presu</th>
-                <th class="text-end">Subtotál</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${session.items
-                .map(
-                  (item) => `
-                <tr class="border-bottom border-secondary border-opacity-25">
-                  <td>
-                    <strong class="text-white">${item.name}</strong>
-                    ${item.note ? `<div class="badge bg-warning text-dark"><i class="fa-solid fa-pen small"></i> ${item.note}</div>` : ''}
-                    <div class="text-white-50" style="font-size: 0.75rem;">${item.order_code}</div>
-                  </td>
-                  <td class="text-center fw-bold text-white">${item.quantity}</td>
-                  <td class="text-end text-white-50">$${item.unit_price}</td>
-                  <td class="text-end fw-bold text-warning">$${item.subtotal}</td>
-                </tr>
-              `
-                )
-                .join('')}
-            </tbody>
-          </table>
-        `;
-      }
-    }
-
-    const payBtn = document.getElementById('btn-submit-payment');
-    if (payBtn) {
-      payBtn.disabled = false;
-      payBtn.innerHTML = '<i class="fa-solid fa-check-circle me-1"></i> Kompleta Pagamentu';
-    }
-
-    const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
-    modal.show();
+    this.onMethodChange();
+    this.resetPayButton();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentModal')).show();
   }
 
-  setTenderedAmount(val) {
-    document.getElementById('pos-tendered-amount').value = val.toFixed(2);
+  onMethodChange() {
+    const isCash = document.getElementById('pos-payment-method').value === 'CASH';
+    document.getElementById('pos-cash-fields').hidden = !isCash;
+    this.calculateChange();
+  }
+
+  setTenderedAmount(value) {
+    document.getElementById('pos-tendered-amount').value = Number(value).toFixed(2);
     this.calculateChange();
   }
 
   calculateChange() {
-    const tendered = parseFloat(document.getElementById('pos-tendered-amount').value) || 0;
-    const change = tendered - this.currentBillAmount;
-    const changeEl = document.getElementById('pos-change-amount');
+    const isCash = document.getElementById('pos-payment-method').value === 'CASH';
     const payBtn = document.getElementById('btn-submit-payment');
-
-    if (changeEl) {
-      if (change < 0) {
-        changeEl.textContent = `Osan Seidauk To'o $${Math.abs(change).toFixed(2)}`;
-        changeEl.className = 'fw-bold fs-5 text-danger';
-        if (payBtn) payBtn.disabled = true;
-      } else {
-        changeEl.textContent = `$${change.toFixed(2)}`;
-        changeEl.className = 'fw-bold fs-4 text-success';
-        if (payBtn) payBtn.disabled = false;
-      }
+    const row = document.getElementById('pos-change-row');
+    const out = document.getElementById('pos-change-amount');
+    if (!isCash) {
+      payBtn.disabled = this.currentBillAmount <= 0;
+      return;
     }
+    const tendered = parseFloat(document.getElementById('pos-tendered-amount').value) || 0;
+    const change = Math.round((tendered - this.currentBillAmount) * 100) / 100;
+    const short = change < 0;
+    row.classList.toggle('is-short', short);
+    row.classList.toggle('is-ok', !short);
+    out.textContent = short ? `${t('short_by')} ${formatMoney(Math.abs(change))}` : formatMoney(change);
+    payBtn.disabled = short || this.currentBillAmount <= 0;
+  }
+
+  resetPayButton() {
+    const btn = document.getElementById('btn-submit-payment');
+    btn.innerHTML = `<i class="fa-solid fa-check" aria-hidden="true"></i><span>${escapeHtml(t('btn_finish_payment'))}</span>`;
+    this.calculateChange();
   }
 
   async processPayment() {
-    const payBtn = document.getElementById('btn-submit-payment');
-    if (payBtn) {
-      if (payBtn.disabled) return;
-      payBtn.disabled = true;
-      payBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Prosesu Hela Pagamentu...';
-    }
+    const btn = document.getElementById('btn-submit-payment');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
 
-    const tendered = parseFloat(document.getElementById('pos-tendered-amount').value) || 0;
     const method = document.getElementById('pos-payment-method').value;
+    const tendered = method === 'CASH' ? parseFloat(document.getElementById('pos-tendered-amount').value) || 0 : this.currentBillAmount;
 
     try {
-      const payment = await apiPost(`/api/v1/cashier/table-sessions/${this.currentPaymentSessionId}/payments/`, {
-        tendered_amount: tendered,
-        method: method,
-        idempotency_key: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('pay_' + Date.now()),
-      });
-
-      bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
-      this.loadTables();
-
-      showToast(`Pagamentu susesu $${payment.amount}! Troku $${payment.change_amount}`, 'success');
+      const payment = await apiPost(
+        `/api/v1/cashier/table-sessions/${this.currentPaymentSessionId}/payments/`,
+        { tendered_amount: tendered.toFixed(2), method, idempotency_key: this.paymentIdempotencyKey },
+        { 'Idempotency-Key': this.paymentIdempotencyKey }
+      );
+      bootstrap.Modal.getInstance(document.getElementById('paymentModal'))?.hide();
+      showToast(`${t('payment_success')} ${formatMoney(payment.amount)} · ${t('change_label')} ${formatMoney(payment.change_amount)}`, 'success');
       SoundEffects.playSuccess();
-
+      this.loadTables();
       this.showReceiptModal(payment);
     } catch (e) {
       showToast(e.message, 'error');
-    } finally {
-      if (payBtn) {
-        payBtn.disabled = false;
-        payBtn.innerHTML = '<i class="fa-solid fa-check-circle me-1"></i> Kompleta Pagamentu';
-      }
+      this.resetPayButton();
     }
   }
 
+  // ------------------------------------------------------------------
+  // Receipts
+  // ------------------------------------------------------------------
   async viewReceiptForSession(sessionId) {
     try {
       const payment = await apiGet(`/api/v1/cashier/table-sessions/${sessionId}/payments/`);
       this.showReceiptModal(payment);
     } catch (e) {
-      showToast(e.message || 'Resibu la hetan.', 'error');
+      showToast(e.message, 'error');
     }
+  }
+
+  receiptHtml(payment) {
+    const r = window.CELVASS_RESTAURANT || {};
+    const rows = (payment.items || [])
+      .map(
+        (i) => `
+        <tr>
+          <td>${escapeHtml(i.name)}${i.note ? `<br><small>* ${escapeHtml(i.note)}</small>` : ''}</td>
+          <td style="text-align:center">${escapeHtml(i.quantity)}</td>
+          <td style="text-align:right">${formatMoney(i.subtotal)}</td>
+        </tr>`
+      )
+      .join('');
+    const paidAt = payment.paid_at ? new Date(payment.paid_at).toLocaleString() : '';
+    return `
+      <div class="receipt-paper" id="printable-receipt">
+        <div style="text-align:center">
+          <strong style="font-size:14px">${escapeHtml((r.name || 'Celvass Resto & Bar').toUpperCase())}</strong><br>
+          ${r.address ? `<small>${escapeHtml(r.address)}</small><br>` : ''}
+          ${r.phone ? `<small>Tel: ${escapeHtml(r.phone)}</small>` : ''}
+        </div>
+        <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;margin:8px 0;padding:4px 0">
+          <div>${escapeHtml(t('th_table'))}: ${escapeHtml(payment.table_name || payment.table_code || '-')}</div>
+          <div>${escapeHtml(t('th_bill_code'))}: ${escapeHtml(payment.payment_code)}</div>
+          <div>${escapeHtml(t('date_time'))}: ${escapeHtml(paidAt)}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="border-bottom:1px dashed #000"><th style="text-align:left">Item</th><th>Qtd</th><th style="text-align:right">${escapeHtml(t('subtotal'))}</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="border-top:1px dashed #000;margin-top:6px;padding-top:4px">
+          <div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(t('total').toUpperCase())}</span><span>${formatMoney(payment.amount)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span>${escapeHtml(t('tendered_short'))}</span><span>${formatMoney(payment.tendered_amount)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(t('change_label'))}</span><span>${formatMoney(payment.change_amount)}</span></div>
+        </div>
+        <div style="text-align:center;margin-top:10px"><small>${escapeHtml(t('receipt_thanks'))}</small></div>
+      </div>`;
   }
 
   showReceiptModal(payment) {
-    const receiptContent = document.getElementById('receipt-print-content');
-    if (receiptContent) {
-      receiptContent.innerHTML = `
-        <div class="receipt-paper" id="printable-receipt">
-          <div class="text-center mb-2">
-            <h5 class="fw-bold mb-0">CELVASS RESTO &amp; BAR</h5>
-            <small>Praia dos Coqueiros, Dili, Timor-Leste</small><br>
-            <small>Tel: +670 7712 3456</small>
-          </div>
-          <div class="border-top border-bottom py-1 my-2 small text-start">
-            <div><strong>Meza:</strong> ${payment.table_name || payment.table_code || '-'}</div>
-            <div><strong>Resibu Nu:</strong> ${payment.payment_code}</div>
-            <div><strong>Data:</strong> ${new Date(payment.paid_at).toLocaleString()}</div>
-          </div>
-          <div class="my-2 text-start">
-            <table style="width: 100%; font-size: 11px; border-collapse: collapse;">
-              <thead>
-                <tr style="border-bottom: 1px dashed #666;">
-                  <th style="text-align: left; padding: 2px 0;">Item</th>
-                  <th style="text-align: center; padding: 2px 0;">Qtd</th>
-                  <th style="text-align: right; padding: 2px 0;">Subtotál</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${(payment.items || [])
-                  .map(
-                    (i) => `
-                  <tr>
-                    <td style="padding: 2px 0;">
-                      <strong>${i.name}</strong>
-                      ${i.note ? `<br><small style="color: #666;">* ${i.note}</small>` : ''}
-                    </td>
-                    <td style="text-align: center; padding: 2px 0;">${i.quantity}</td>
-                    <td style="text-align: right; padding: 2px 0;">$${i.subtotal}</td>
-                  </tr>
-                `
-                  )
-                  .join('')}
-              </tbody>
-            </table>
-          </div>
-          <div class="border-top border-dark pt-1 small text-start">
-            <div class="d-flex justify-content-between fw-bold">
-              <span>TOTÁL KANTA:</span>
-              <span>$${payment.amount}</span>
-            </div>
-            <div class="d-flex justify-content-between">
-              <span>OSAN SIMU:</span>
-              <span>$${payment.tendered_amount}</span>
-            </div>
-            <div class="d-flex justify-content-between fw-bold text-success border-top pt-1 mt-1">
-              <span>OSAN FILA (CHANGE):</span>
-              <span>$${payment.change_amount}</span>
-            </div>
-          </div>
-          <div class="text-center mt-3 small text-muted">
-            <p class="mb-0">Obrigado barak ba ita-boot nia vizita!</p>
-            <small>Sistema PWA Celvass Resto &amp; Bar</small>
-          </div>
-        </div>
-      `;
-      new bootstrap.Modal(document.getElementById('receiptModal')).show();
+    document.getElementById('receipt-print-content').innerHTML = this.receiptHtml(payment);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('receiptModal')).show();
+  }
+
+  openPrintWindow(innerHtml, title) {
+    const w = window.open('', '_blank', 'width=380,height=640');
+    if (!w) {
+      showToast(t('popup_blocked'), 'warning');
+      return;
     }
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+      <style>
+        @page { size: 80mm auto; margin: 0; }
+        html, body { margin: 0; padding: 6px; width: 76mm; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
+        .receipt-paper { border: 0 !important; padding: 0 !important; max-width: none !important; }
+        table { width: 100%; border-collapse: collapse; } td, th { padding: 2px 0; vertical-align: top; }
+      </style></head><body>${innerHtml}</body></html>`);
+    w.document.close();
+    w.onload = () => {
+      w.focus();
+      w.print();
+      setTimeout(() => w.close(), 500);
+    };
   }
 
   printCurrentReceipt() {
-    const receiptEl = document.getElementById('printable-receipt');
-    if (!receiptEl) {
-      window.print();
-      return;
-    }
-
-    const printWindow = window.open('', '_blank', 'width=380,height=600');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Receipt - Celvass Resto &amp; Bar</title>
-        <style>
-          @page {
-            size: 80mm auto;
-            margin: 0mm !important;
-          }
-          html, body {
-            margin: 0;
-            padding: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            line-height: 1.25;
-            background: #fff;
-            color: #000;
-            width: 76mm;
-            max-width: 100%;
-          }
-          .text-center { text-align: center; }
-          .text-start { text-align: left; }
-          .text-end { text-align: right; }
-          .fw-bold { font-weight: bold; }
-          .d-flex { display: flex; }
-          .justify-content-between { display: flex; justify-content: space-between; }
-          .border-top { border-top: 1px dashed #000; }
-          .border-bottom { border-bottom: 1px dashed #000; }
-          .my-1 { margin-top: 4px; margin-bottom: 4px; }
-          .my-2 { margin-top: 8px; margin-bottom: 8px; }
-          .py-1 { padding-top: 4px; padding-bottom: 4px; }
-          .pt-1 { padding-top: 4px; }
-          .mt-1 { margin-top: 4px; }
-          .mt-3 { margin-top: 12px; }
-          .mb-0 { margin-bottom: 0; }
-          .mb-2 { margin-bottom: 6px; }
-          table { width: 100%; border-collapse: collapse; }
-          td, th { padding: 2px 0; }
-          @media print {
-            body { margin: 0; padding: 4px; }
-          }
-        </style>
-      </head>
-      <body>
-        ${receiptEl.outerHTML}
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          };
-        <\/script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const el = document.getElementById('printable-receipt');
+    if (el) this.openPrintWindow(el.outerHTML, t('receipt_title'));
   }
 
-  async handleCloseSession(sessionId, tableName) {
-    if (!confirm(`Taka sesi meza ba ${tableName}? (Garante katak pagamentu hotu remata ona)`)) return;
+  // ------------------------------------------------------------------
+  // History
+  // ------------------------------------------------------------------
+  switchHistorySubTab(tab) {
+    this.currentHistorySubTab = tab;
+    document.getElementById('subtab-btn-orders').classList.toggle('is-active', tab === 'orders');
+    document.getElementById('subtab-btn-bills').classList.toggle('is-active', tab === 'bills');
+    document.getElementById('subview-orders-history').hidden = tab !== 'orders';
+    document.getElementById('subview-bills-history').hidden = tab !== 'bills';
+    this.refreshActiveHistoryTab();
+  }
+
+  refreshActiveHistoryTab() {
+    if (this.currentHistorySubTab === 'bills') this.loadBillsHistory();
+    else this.loadOrdersHistory();
+  }
+
+  setOrdersDateFilter(range) {
+    this.ordersDateFilter = range;
+    document.getElementById('order-date-today').classList.toggle('is-active', range === 'today');
+    document.getElementById('order-date-all').classList.toggle('is-active', range === 'all');
+    this.loadOrdersHistory();
+  }
+
+  setBillsDateFilter(range) {
+    this.billsDateFilter = range;
+    document.getElementById('bill-date-today').classList.toggle('is-active', range === 'today');
+    document.getElementById('bill-date-all').classList.toggle('is-active', range === 'all');
+    this.loadBillsHistory();
+  }
+
+  tableMessage(tbodyId, cols, html) {
+    const tbody = document.getElementById(tbodyId);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="${cols}" class="cell-empty">${html}</td></tr>`;
+  }
+
+  async loadOrdersHistory() {
+    this.tableMessage('orders-history-tbody', 7, emptyState('fa-spinner fa-spin', t('loading_history')));
     try {
-      await apiPost(`/api/v1/cashier/table-sessions/${sessionId}/close/`);
-      this.loadTables();
-      showToast(`Sesi taka ona ba ${tableName}.`, 'info');
-      SoundEffects.playBell();
+      this.ordersHistoryData = (await apiGet(`/api/v1/cashier/orders/history/?date_range=${encodeURIComponent(this.ordersDateFilter)}`)) || [];
+      this.filterOrdersHistory();
+    } catch (e) {
+      this.tableMessage('orders-history-tbody', 7, emptyState('fa-triangle-exclamation', e.message));
+    }
+  }
+
+  filterOrdersHistory() {
+    const status = document.getElementById('order-status-filter')?.value || 'ALL';
+    const q = (document.getElementById('order-history-search')?.value || '').toLowerCase().trim();
+    let list = this.ordersHistoryData || [];
+    if (status !== 'ALL') list = list.filter((o) => o.status === status);
+    if (q) {
+      list = list.filter((o) =>
+        [o.order_code, o.table_name, o.table_code, o.session_code, o.items_summary].some((v) => (v || '').toLowerCase().includes(q))
+      );
+    }
+    this.renderOrdersHistoryTable(list);
+  }
+
+  renderOrdersHistoryTable(orders) {
+    const tbody = document.getElementById('orders-history-tbody');
+    if (!tbody) return;
+    if (!orders.length) {
+      this.tableMessage('orders-history-tbody', 7, emptyState('fa-inbox', t('no_orders_history')));
+      return;
+    }
+    const L = (k) => escapeHtml(t(k));
+    tbody.innerHTML = orders
+      .map(
+        (o) => `
+        <tr>
+          <td data-label="${L('th_time')}"><span class="tabular">${escapeHtml(o.created_at)}</span> <span class="text-tertiary fs-8">${escapeHtml(o.created_date || '')}</span></td>
+          <td class="cell-primary" data-label="${L('th_order_code')}">
+            <div class="d-flex justify-content-between align-items-center gap-2">
+              <strong>${escapeHtml(o.order_code)}</strong>
+              <span class="d-md-none">${statusPill(o.status)}</span>
+            </div>
+            ${o.customer_note ? `<div class="fs-8 text-tertiary">${escapeHtml(o.customer_note)}</div>` : ''}
+            ${o.rejection_reason ? `<div class="fs-8" style="color:var(--danger)">${escapeHtml(o.rejection_reason)}</div>` : ''}
+          </td>
+          <td data-label="${L('th_table')}">${escapeHtml(o.table_name || o.table_code)}</td>
+          <td data-label="${L('th_items')}" class="fs-7 text-secondary-app">${escapeHtml(o.items_summary)}</td>
+          <td data-label="${L('th_total')}" class="text-end tabular fw-semibold">${formatMoney(o.grand_total)}</td>
+          <td data-label="${L('th_status')}" class="d-none d-md-table-cell">${statusPill(o.status)}</td>
+          <td class="cell-actions text-end">
+            ${o.can_print_receipt ? `<button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.viewReceiptForSession('${escapeHtml(o.session_id)}')"><i class="fa-solid fa-receipt" aria-hidden="true"></i>${L('btn_print_receipt')}</button>` : ''}
+          </td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  async loadBillsHistory() {
+    this.tableMessage('bills-history-tbody', 8, emptyState('fa-spinner fa-spin', t('loading_history')));
+    try {
+      this.billsHistoryData = (await apiGet(`/api/v1/cashier/bills/history/?date_range=${encodeURIComponent(this.billsDateFilter)}`)) || [];
+      this.filterBillsHistory();
+    } catch (e) {
+      this.tableMessage('bills-history-tbody', 8, emptyState('fa-triangle-exclamation', e.message));
+    }
+  }
+
+  filterBillsHistory() {
+    const q = (document.getElementById('bill-history-search')?.value || '').toLowerCase().trim();
+    let list = this.billsHistoryData || [];
+    if (q) list = list.filter((b) => [b.payment_code, b.table_name, b.table_code, b.cashier_name].some((v) => (v || '').toLowerCase().includes(q)));
+    const total = list.reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
+    const badge = document.getElementById('bills-total-revenue-badge');
+    if (badge) badge.textContent = `${t('total_revenue_badge')}: ${formatMoney(total)}`;
+    this.renderBillsHistoryTable(list);
+  }
+
+  renderBillsHistoryTable(bills) {
+    const tbody = document.getElementById('bills-history-tbody');
+    if (!tbody) return;
+    if (!bills.length) {
+      this.tableMessage('bills-history-tbody', 8, emptyState('fa-receipt', t('no_bills_found')));
+      return;
+    }
+    const L = (k) => escapeHtml(t(k));
+    tbody.innerHTML = bills
+      .map(
+        (b) => `
+        <tr>
+          <td data-label="${L('date_time')}"><span class="tabular">${escapeHtml(b.paid_at_time)}</span> <span class="text-tertiary fs-8">${escapeHtml(b.paid_at_date)}</span></td>
+          <td class="cell-primary" data-label="${L('th_bill_code')}">
+            <div class="d-flex justify-content-between align-items-center gap-2"><strong>${escapeHtml(b.payment_code)}</strong><span class="price d-md-none">${formatMoney(b.amount)}</span></div>
+          </td>
+          <td data-label="${L('th_table')}">${escapeHtml(b.table_name || b.table_code)}</td>
+          <td data-label="${L('payment_method_short')}"><span class="badge-soft">${escapeHtml(b.method)}</span></td>
+          <td data-label="${L('th_total')}" class="text-end tabular fw-semibold d-none d-md-table-cell">${formatMoney(b.amount)}</td>
+          <td data-label="${L('th_tendered_change')}" class="text-end tabular fs-7">${formatMoney(b.tendered_amount)} / ${formatMoney(b.change_amount)}</td>
+          <td data-label="${L('th_cashier')}">${escapeHtml(b.cashier_name)}</td>
+          <td class="cell-actions text-end"><button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.viewReceiptForSession('${escapeHtml(b.session_id)}')"><i class="fa-solid fa-print" aria-hidden="true"></i>${L('btn_print_receipt')}</button></td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  // ------------------------------------------------------------------
+  // Shift close
+  // ------------------------------------------------------------------
+  async loadShiftSummary() {
+    try {
+      const d = await apiGet('/api/v1/cashier/shift/summary/');
+      this.currentShiftData = d;
+      const set = (id, v) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = v;
+      };
+      set('shift-cash-total', formatMoney(d.cash_total));
+      set('shift-other-total', formatMoney(d.other_total));
+      set('shift-grand-total', formatMoney(d.grand_total));
+      set('shift-paid-sessions-count', d.paid_sessions_count);
+      set('shift-completed-orders-count', d.completed_orders_count);
+      set('shift-payments-count', d.payments_count);
+      set('shift-report-timestamp', d.timestamp);
     } catch (e) {
       showToast(e.message, 'error');
     }
   }
 
+  async printShiftReport() {
+    if (!this.currentShiftData) await this.loadShiftSummary();
+    const d = this.currentShiftData || {};
+    const r = window.CELVASS_RESTAURANT || {};
+    const row = (label, value, bold) => `<div style="display:flex;justify-content:space-between;${bold ? 'font-weight:bold' : ''}"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
+    const html = `
+      <div style="text-align:center"><strong style="font-size:14px">${escapeHtml((r.name || 'Celvass Resto & Bar').toUpperCase())}</strong><br><strong>Z-REPORT</strong></div>
+      <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;margin:8px 0;padding:4px 0">${escapeHtml(t('date_time'))}: ${escapeHtml(d.timestamp || new Date().toLocaleString())}</div>
+      ${row(t('cash_total'), formatMoney(d.cash_total))}
+      ${row(t('card_total'), formatMoney(d.other_total))}
+      <div style="border-top:1px dashed #000;margin:4px 0"></div>
+      ${row(t('shift_revenue'), formatMoney(d.grand_total), true)}
+      <div style="border-top:1px dashed #000;margin:8px 0 4px"></div>
+      ${row(t('paid_tables_count'), String(d.paid_sessions_count ?? 0))}
+      ${row(t('completed_orders_count'), String(d.completed_orders_count ?? 0))}
+      ${row(t('payments_count'), String(d.payments_count ?? 0))}`;
+    this.openPrintWindow(html, 'Z-Report');
+  }
+
+  // ------------------------------------------------------------------
+  // Realtime
+  // ------------------------------------------------------------------
   initWebSocket() {
     this.ws = new WebSocketClient('/ws/cashier/', (msg) => {
-      console.log('Cashier WS update:', msg);
+      const d = msg.data || {};
+      const where = d.table_name || d.table_code || '';
       if (msg.event === 'TABLE_ACTIVATION_REQUESTED') {
         SoundEffects.playBell();
-        showToast(`🔔 Meza ${msg.data.table_name || msg.data.table_code} husu atu loke sesi!`, 'warning');
+        showToast(`${t('table_activation_requested_title')}: ${where}`, 'warning');
         this.loadActivationRequests();
         this.loadTables();
       } else if (msg.event === 'NEW_ORDER_WAITING' || msg.event === 'ORDER_CREATED') {
         SoundEffects.playBell();
-        showToast(`🔔 Pedidu foun ${msg.data.order_code} - ${msg.data.table_name || msg.data.table_code}!`, 'warning');
+        showToast(`${t('new_order_toast')} ${d.order_code || ''} · ${where}`, 'warning');
         this.loadPendingOrders();
       } else if (msg.event === 'BILL_REQUESTED') {
         SoundEffects.playBell();
-        showToast(`💳 Husu konta hosi ${msg.data.table_name || msg.data.table_code}!`, 'info');
+        showToast(`${t('bill_request_toast')} ${where}`, 'info');
         this.loadTables();
-      } else if (msg.event === 'SESSION_OPENED' || msg.event === 'SESSION_CLOSED' || msg.event === 'PAYMENT_COMPLETED') {
+      } else if (['SESSION_OPENED', 'SESSION_CLOSED', 'PAYMENT_COMPLETED'].includes(msg.event)) {
         this.loadActivationRequests();
         this.loadTables();
       }
     });
   }
 }
-

@@ -1,114 +1,65 @@
-import json
-from django.http import HttpResponse, JsonResponse
+from pathlib import Path
+
+from django.conf import settings
+from django.contrib.staticfiles import finders
+from django.http import HttpResponse, JsonResponse, Http404
 from django.shortcuts import render
 from django.views.decorators.cache import cache_control
 
-@cache_control(max_age=3600, must_revalidate=True)
+SERVICE_WORKER_PATH = 'js/sw.js'
+
+
+@cache_control(max_age=3600)
 def manifest_json(request):
+    restaurant_name = getattr(getattr(request, 'current_restaurant', None), 'name', None) or "Celvass Resto & Bar"
     manifest = {
-        "name": "Celvass Resto & Bar - Dine In PWA",
+        "name": restaurant_name,
         "short_name": "Celvass",
-        "description": "Progressive Web Application for Restaurant Dine-In Ordering with Cashier Verification",
+        "description": "Pedidu dine-in liuhosi QR ba Celvass Resto & Bar",
         "id": "/",
         "start_url": "/",
         "scope": "/",
+        "lang": "tet",
+        "dir": "ltr",
         "display": "standalone",
-        "background_color": "#0f172a",
-        "theme_color": "#f97316",
-        "orientation": "portrait-primary",
+        "orientation": "any",
+        "background_color": "#faf8f5",
+        "theme_color": "#ffffff",
+        "categories": ["food", "business"],
         "icons": [
+            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        ],
+        "shortcuts": [
             {
-                "src": "/static/icons/icon-192.png",
-                "sizes": "192x192",
-                "type": "image/png",
-                "purpose": "any maskable"
-            },
-            {
-                "src": "/static/icons/icon-512.png",
-                "sizes": "512x512",
-                "type": "image/png",
-                "purpose": "any maskable"
+                "name": "Portal staff",
+                "short_name": "Staff",
+                "url": "/login/",
+                "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"}],
             }
-        ]
+        ],
     }
-    return JsonResponse(manifest)
+    response = JsonResponse(manifest)
+    response['Content-Type'] = 'application/manifest+json'
+    return response
 
-@cache_control(no_cache=True, no_store=True, must_revalidate=True)
+
+def _read_service_worker():
+    path = finders.find(SERVICE_WORKER_PATH)
+    if not path:
+        candidate = Path(settings.STATIC_ROOT) / SERVICE_WORKER_PATH
+        path = str(candidate) if candidate.exists() else None
+    if not path:
+        raise Http404("Service worker not found")
+    return Path(path).read_text(encoding='utf-8')
+
+
+@cache_control(no_cache=True, must_revalidate=True, max_age=0)
 def service_worker(request):
-    sw_code = """
-const CACHE_NAME = 'celvass-pwa-v3';
-const STATIC_ASSETS = [
-    '/',
-    '/offline/',
-    '/static/css/style.css',
-    '/static/js/i18n.js',
-    '/static/js/api.js',
-    '/static/js/sound.js',
-    '/static/js/websocket.js',
-    '/static/js/customer.js',
-    '/static/js/pwa.js',
-    '/static/icons/default-food.png',
-    '/static/icons/icon-192.png',
-    '/static/icons/icon-512.png'
-];
-
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS).catch((err) => {
-                console.warn('PWA Asset cache skip:', err);
-            });
-        })
-    );
-    self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((keys) => {
-            return Promise.all(
-                keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-            );
-        })
-    );
-    self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-    const request = event.request;
-    const url = new URL(request.url);
-
-    // API calls & Mutations: Network-only, do not cache POST/PUT/DELETE
-    if (request.method !== 'GET' || url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) {
-        return;
-    }
-
-    // Static assets & Navigation: Network-first with Cache fallback
-    event.respondWith(
-        fetch(request)
-            .then((response) => {
-                if (response.status === 200) {
-                    const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
-                }
-                return response;
-            })
-            .catch(() => {
-                return caches.match(request).then((cachedResponse) => {
-                    if (cachedResponse) {
-                        return cachedResponse;
-                    }
-                    if (request.mode === 'navigate') {
-                        return caches.match('/offline/');
-                    }
-                });
-            })
-    );
-});
-"""
-    response = HttpResponse(sw_code, content_type='application/javascript')
+    response = HttpResponse(_read_service_worker(), content_type='application/javascript')
     response['Service-Worker-Allowed'] = '/'
     return response
+
 
 def offline_view(request):
     return render(request, 'customer/offline.html')

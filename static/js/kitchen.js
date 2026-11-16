@@ -1,225 +1,153 @@
 /**
- * Kitchen Display System (KDS) Controller
+ * Kitchen Display System controller.
+ * Columns: CONFIRMED (new) -> PREPARING -> READY. Tickets older than 10 min are flagged,
+ * older than 20 min are marked late.
  */
+
+const KDS_WARN_MINUTES = 10;
+const KDS_LATE_MINUTES = 20;
 
 class KitchenKDSApp {
   constructor() {
     this.orders = [];
-    this.activeMobileTab = 'CONFIRMED';
+    this.busy = new Set();
     this.init();
   }
 
   init() {
     this.loadQueue();
     this.initWebSocket();
-
     window.addEventListener('languageChanged', () => this.renderKDS());
-    window.addEventListener('resize', () => this.applyMobileVisibility());
-
-    // Ticker timer update every second
     setInterval(() => this.updateElapsedTimers(), 1000);
-
-    // Polling fallback every 6 seconds
-    setInterval(() => this.loadQueue(), 6000);
+    setInterval(() => {
+      if (!document.hidden) this.loadQueue();
+    }, 8000);
   }
 
   async loadQueue() {
     try {
-      this.orders = await apiGet('/api/v1/kitchen/orders/');
+      this.orders = (await apiGet('/api/v1/kitchen/orders/')) || [];
       this.renderKDS();
     } catch (e) {
-      console.error('Error loading kitchen queue:', e);
+      console.error('kitchen queue', e);
     }
   }
 
   renderKDS() {
-    const colConfirmed = document.getElementById('kds-confirmed-col');
-    const colPreparing = document.getElementById('kds-preparing-col');
-    const colReady = document.getElementById('kds-ready-col');
+    const groups = { CONFIRMED: [], PREPARING: [], READY: [] };
+    this.orders.forEach((o) => groups[o.status]?.push(o));
 
-    if (!colConfirmed || !colPreparing || !colReady) return;
+    const cols = {
+      CONFIRMED: ['kds-confirmed-col', 'count-confirmed'],
+      PREPARING: ['kds-preparing-col', 'count-preparing'],
+      READY: ['kds-ready-col', 'count-ready'],
+    };
 
-    const confirmedOrders = this.orders.filter((o) => o.status === 'CONFIRMED');
-    const preparingOrders = this.orders.filter((o) => o.status === 'PREPARING');
-    const readyOrders = this.orders.filter((o) => o.status === 'READY');
+    Object.entries(cols).forEach(([status, [colId, countId]]) => {
+      const list = groups[status];
+      const col = document.getElementById(colId);
+      const count = document.getElementById(countId);
+      if (count) count.textContent = list.length;
+      document.querySelectorAll(`[data-count-for="${status}"]`).forEach((el) => {
+        el.textContent = list.length > 0 ? list.length : '';
+      });
+      if (!col) return;
+      col.innerHTML = list.length
+        ? list.map((o) => this.renderCard(o, status)).join('')
+        : `<div class="empty-state"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i><div class="fs-7">${escapeHtml(t('kds_empty_col'))}</div></div>`;
+    });
 
-    document.getElementById('count-confirmed').textContent = confirmedOrders.length;
-    document.getElementById('count-preparing').textContent = preparingOrders.length;
-    document.getElementById('count-ready').textContent = readyOrders.length;
-
-    const countConfirmedM = document.getElementById('count-confirmed-m');
-    const countPreparingM = document.getElementById('count-preparing-m');
-    const countReadyM = document.getElementById('count-ready-m');
-    if (countConfirmedM) countConfirmedM.textContent = confirmedOrders.length;
-    if (countPreparingM) countPreparingM.textContent = preparingOrders.length;
-    if (countReadyM) countReadyM.textContent = readyOrders.length;
-
-    colConfirmed.innerHTML = confirmedOrders.map((o) => this.renderCard(o, 'CONFIRMED')).join('');
-    colPreparing.innerHTML = preparingOrders.map((o) => this.renderCard(o, 'PREPARING')).join('');
-    colReady.innerHTML = readyOrders.map((o) => this.renderCard(o, 'READY')).join('');
-
-    this.applyMobileVisibility();
-  }
-
-  switchMobileTab(status) {
-    this.activeMobileTab = status;
-    this.applyMobileVisibility();
-  }
-
-  applyMobileVisibility() {
-    const colConf = document.getElementById('kds-col-wrapper-confirmed');
-    const colPrep = document.getElementById('kds-col-wrapper-preparing');
-    const colRdy = document.getElementById('kds-col-wrapper-ready');
-
-    const btnConf = document.getElementById('btn-tab-confirmed');
-    const btnPrep = document.getElementById('btn-tab-preparing');
-    const btnRdy = document.getElementById('btn-tab-ready');
-
-    if (window.innerWidth < 768) {
-      if (colConf) colConf.style.display = this.activeMobileTab === 'CONFIRMED' ? 'block' : 'none';
-      if (colPrep) colPrep.style.display = this.activeMobileTab === 'PREPARING' ? 'block' : 'none';
-      if (colRdy) colRdy.style.display = this.activeMobileTab === 'READY' ? 'block' : 'none';
-
-      if (btnConf) {
-        btnConf.className = this.activeMobileTab === 'CONFIRMED'
-          ? 'btn btn-sm btn-warning flex-fill active fw-bold rounded-pill text-dark shadow'
-          : 'btn btn-sm btn-outline-warning flex-fill fw-bold rounded-pill';
-      }
-      if (btnPrep) {
-        btnPrep.className = this.activeMobileTab === 'PREPARING'
-          ? 'btn btn-sm btn-info flex-fill active fw-bold rounded-pill text-dark shadow'
-          : 'btn btn-sm btn-outline-info flex-fill fw-bold rounded-pill';
-      }
-      if (btnRdy) {
-        btnRdy.className = this.activeMobileTab === 'READY'
-          ? 'btn btn-sm btn-success flex-fill active fw-bold rounded-pill text-white shadow'
-          : 'btn btn-sm btn-outline-success flex-fill fw-bold rounded-pill';
-      }
-    } else {
-      if (colConf) colConf.style.display = 'block';
-      if (colPrep) colPrep.style.display = 'block';
-      if (colRdy) colRdy.style.display = 'block';
-    }
+    this.updateElapsedTimers();
   }
 
   renderCard(order, column) {
-    const isUrgent = this.getElapsedMinutes(order.confirmed_at || order.created_at) > 15;
+    const action = {
+      CONFIRMED: ['startPreparing', 'btn-primary', 'fa-fire', 'btn_start_cooking'],
+      PREPARING: ['markReady', 'btn-success', 'fa-bell', 'btn_mark_ready'],
+      READY: ['markServed', 'btn-secondary-app', 'fa-check-double', 'btn_mark_served'],
+    }[column];
+    const startedAt = order.confirmed_at || order.submitted_at || order.created_at;
 
-    let actionBtn = '';
-    if (column === 'CONFIRMED') {
-      actionBtn = `
-        <button class="btn btn-warning w-100 fw-bold py-1.5 mt-2 rounded-pill text-dark shadow-sm d-flex align-items-center justify-content-center" style="font-size:0.82rem;" onclick="kdsApp.startPreparing('${order.id}')">
-          <i class="fa-solid fa-fire me-1.5"></i> ${t('btn_start_cooking')}
-        </button>
-      `;
-    } else if (column === 'PREPARING') {
-      actionBtn = `
-        <button class="btn btn-success w-100 fw-bold py-1.5 mt-2 rounded-pill shadow-sm d-flex align-items-center justify-content-center" style="font-size:0.82rem;" onclick="kdsApp.markReady('${order.id}')">
-          <i class="fa-solid fa-bell me-1.5"></i> ${t('btn_mark_ready')}
-        </button>
-      `;
-    } else if (column === 'READY') {
-      actionBtn = `
-        <button class="btn btn-outline-light w-100 fw-bold py-1.5 mt-2 rounded-pill shadow-sm d-flex align-items-center justify-content-center" style="font-size:0.82rem;" onclick="kdsApp.markServed('${order.id}')">
-          <i class="fa-solid fa-check-double me-1.5"></i> ${t('btn_mark_served')}
-        </button>
-      `;
-    }
+    const items = (order.items || [])
+      .map(
+        (i) => `
+        <li>
+          <span class="ticket-qty">${escapeHtml(i.quantity)}×</span>
+          <span class="min-w-0">${escapeHtml(i.menu_name_snapshot)}
+            ${i.note ? `<span class="ticket-note"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>${escapeHtml(i.note)}</span>` : ''}
+          </span>
+        </li>`
+      )
+      .join('');
 
     return `
-      <div class="kds-card p-2 p-sm-2.5 mb-2 ${isUrgent ? 'urgent' : column === 'PREPARING' ? 'cooking' : column === 'READY' ? 'ready' : ''}" id="card-${order.id}">
-        <div class="d-flex justify-content-between align-items-center mb-1.5 border-bottom border-white border-opacity-10 pb-1.5">
-          <div class="text-truncate pe-1">
-            <h6 class="fw-bold mb-0 text-warning fs-6 text-truncate">${order.table_name || order.table_code}</h6>
-            <small class="text-white-50" style="font-size:0.72rem;">${order.order_code}</small>
+      <article class="ticket" id="card-${escapeHtml(order.id)}" data-started="${escapeHtml(startedAt || '')}">
+        <div class="ticket-head">
+          <div class="min-w-0">
+            <div class="ticket-table truncate">${escapeHtml(order.table_name || order.table_code)}</div>
+            <div class="ticket-code">${escapeHtml(order.order_code)}</div>
           </div>
-          <span class="badge bg-dark bg-opacity-75 border border-secondary timer-badge flex-shrink-0" style="font-size:0.72rem;" data-time="${order.confirmed_at || order.created_at}">
-            <i class="fa-regular fa-clock me-1"></i> --:--
-          </span>
+          <span class="ticket-timer" aria-label="${escapeHtml(t('elapsed_time'))}">--:--</span>
         </div>
-
-        <ul class="list-unstyled mb-1.5">
-          ${order.items
-            .map(
-              (item) => `
-            <li class="py-1 border-bottom border-white border-opacity-10 d-flex justify-content-between align-items-start">
-              <div>
-                <span class="badge bg-primary px-1.5 py-0.5 me-1" style="font-size:0.75rem;">${item.quantity}x</span>
-                <span class="fw-semibold text-white" style="font-size:0.82rem;">${item.menu_name_snapshot}</span>
-                ${item.note ? `<div class="badge bg-danger text-white mt-1 d-block text-start py-0.5 px-1.5" style="font-size:0.7rem;"><i class="fa-solid fa-triangle-exclamation me-1"></i>${item.note}</div>` : ''}
-              </div>
-            </li>
-          `
-            )
-            .join('')}
-        </ul>
-
-        ${order.customer_note ? `<div class="p-1.5 bg-black bg-opacity-50 rounded text-danger small mb-1.5 border border-danger border-opacity-40" style="font-size:0.75rem;"><strong>Notasaun Meza:</strong> ${order.customer_note}</div>` : ''}
-
-        ${actionBtn}
-      </div>
-    `;
-  }
-
-  getElapsedMinutes(startTimeStr) {
-    if (!startTimeStr) return 0;
-    const diff = (Date.now() - new Date(startTimeStr).getTime()) / 60000;
-    return diff;
+        <ul class="ticket-items">${items}</ul>
+        ${order.customer_note ? `<div class="ticket-table-note"><strong>${escapeHtml(t('customer_notes'))}</strong> ${escapeHtml(order.customer_note)}</div>` : ''}
+        <button type="button" class="btn ${action[1]} w-100" onclick="kdsApp.${action[0]}('${escapeHtml(order.id)}', this)">
+          <i class="fa-solid ${action[2]}" aria-hidden="true"></i>${escapeHtml(t(action[3]))}
+        </button>
+      </article>`;
   }
 
   updateElapsedTimers() {
-    document.querySelectorAll('.timer-badge').forEach((badge) => {
-      const startTimeStr = badge.dataset.time;
-      if (!startTimeStr) return;
-      const elapsedSeconds = Math.floor((Date.now() - new Date(startTimeStr).getTime()) / 1000);
-      const minutes = Math.floor(elapsedSeconds / 60);
-      const seconds = elapsedSeconds % 60;
-      badge.innerHTML = `<i class="fa-regular fa-clock me-1"></i> ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-      if (minutes >= 20) {
-        badge.className = 'badge bg-danger text-white timer-badge';
-      } else if (minutes >= 10) {
-        badge.className = 'badge bg-warning text-dark timer-badge';
-      } else {
-        badge.className = 'badge bg-dark border border-secondary timer-badge';
-      }
+    const now = Date.now();
+    document.querySelectorAll('.ticket[data-started]').forEach((card) => {
+      const start = new Date(card.dataset.started).getTime();
+      const timer = card.querySelector('.ticket-timer');
+      if (!timer || Number.isNaN(start)) return;
+      const secs = Math.max(0, Math.floor((now - start) / 1000));
+      const mins = Math.floor(secs / 60);
+      timer.textContent = `${String(mins).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+      const late = mins >= KDS_LATE_MINUTES;
+      const warn = !late && mins >= KDS_WARN_MINUTES;
+      timer.classList.toggle('is-late', late);
+      timer.classList.toggle('is-warn', warn);
+      card.classList.toggle('is-late', late);
+      card.classList.toggle('is-warn', warn);
     });
   }
 
-  async startPreparing(orderId) {
+  async transition(orderId, btn, path, onDone) {
+    if (this.busy.has(orderId)) return;
+    this.busy.add(orderId);
+    if (btn) btn.disabled = true;
     try {
-      await apiPost(`/api/v1/kitchen/orders/${orderId}/start/`);
-      this.loadQueue();
+      await apiPost(`/api/v1/kitchen/orders/${orderId}/${path}/`);
+      if (onDone) onDone();
+      await this.loadQueue();
     } catch (e) {
       showToast(e.message, 'error');
+      if (btn) btn.disabled = false;
+    } finally {
+      this.busy.delete(orderId);
     }
   }
 
-  async markReady(orderId) {
-    try {
-      await apiPost(`/api/v1/kitchen/orders/${orderId}/ready/`);
-      SoundEffects.playBell();
-      this.loadQueue();
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
+  startPreparing(orderId, btn) {
+    return this.transition(orderId, btn, 'start');
   }
 
-  async markServed(orderId) {
-    try {
-      await apiPost(`/api/v1/kitchen/orders/${orderId}/served/`);
-      this.loadQueue();
-    } catch (e) {
-      showToast(t(e.message), 'error');
-    }
+  markReady(orderId, btn) {
+    return this.transition(orderId, btn, 'ready', () => SoundEffects.playBell());
+  }
+
+  markServed(orderId, btn) {
+    return this.transition(orderId, btn, 'served');
   }
 
   initWebSocket() {
     this.wsClient = new WebSocketClient('/ws/kitchen/', (msg) => {
-      console.log('Kitchen WS update:', msg);
       if (msg.event === 'ORDER_CONFIRMED') {
         SoundEffects.playBell();
-        showToast(`🔔 ${t('new_kitchen_ticket')} ${msg.data.table_name || msg.data.table_code} (${msg.data.order_code})`, 'warning');
+        showToast(`${t('new_kitchen_ticket')} ${msg.data?.table_name || msg.data?.table_code || ''} (${msg.data?.order_code || ''})`, 'warning');
         this.loadQueue();
       } else if (['ORDER_PREPARING', 'ORDER_READY', 'ORDER_SERVED', 'ORDER_CANCELLED'].includes(msg.event)) {
         this.loadQueue();

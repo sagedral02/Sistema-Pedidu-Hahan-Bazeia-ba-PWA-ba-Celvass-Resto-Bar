@@ -8,8 +8,9 @@ from apps.payments.models import Payment, PaymentStatus
 from apps.tables.models import RestaurantTable, TableStatus, TableSession, SessionStatus
 
 def get_dashboard_metrics() -> Dict[str, Any]:
-    today = timezone.now().date()
-    
+    # Local business day (Asia/Dili), consistent with the cashier shift summary.
+    today = timezone.localdate()
+
     # Sales
     today_payments = Payment.objects.filter(
         created_at__date=today,

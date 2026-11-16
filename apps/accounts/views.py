@@ -60,4 +60,7 @@ def demo_login_view(request, role):
 
 def logout_view(request):
     logout(request)
-    return redirect('login')
+    response = redirect('login')
+    # Drop HTTP-cached staff pages on shared devices; the page script also clears the SW page cache.
+    response['Clear-Site-Data'] = '"cache"'
+    return response

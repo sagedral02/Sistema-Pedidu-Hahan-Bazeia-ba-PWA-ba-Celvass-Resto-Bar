@@ -1,1516 +1,525 @@
 {% extends 'base/base.html' %}
 {% load static %}
 
-{% block title %}Painél Admin &amp; Relatóriu — {{ current_restaurant.name }}{% endblock %}
+{% block title %}Admin - {{ current_restaurant.name }}{% endblock %}
+{% block role %}admin{% endblock %}
+{% block default_panel %}overview-panel{% endblock %}
 
-{% block body_class %}admin-dark-body{% endblock %}
+{% block topbar %}{% include 'base/_nav_admin.html' %}{% endblock %}
+{% block tabbar %}{% include 'base/_tabbar_admin.html' %}{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-3 px-md-4 py-3">
 
-  <!-- Header -->
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary border-opacity-25 gap-2">
+<!-- Overview -->
+<section class="app-panel" id="overview-panel" aria-labelledby="overview-title">
+  <div class="page-head">
     <div>
-      <h3 class="fw-bold mb-0 text-white d-flex align-items-center">
-        <i class="fa-solid fa-chart-line text-warning me-2"></i>
-        <span data-i18n="admin_title">Admin &amp; Relatóriu Restorante</span>
-      </h3>
-      <small class="text-white-50">{{ current_restaurant.name }} &bull; Moeda: USD ($) &bull; Timezone: {{ current_restaurant.timezone }}</small>
-    </div>
-    <div class="d-flex align-items-center gap-2">
-      <button class="btn btn-sm btn-outline-warning rounded-pill px-3 fw-bold" onclick="openCreateMenuItemModal()">
-        <i class="fa-solid fa-plus me-1"></i> <span data-i18n="btn_add_menu">Aumenta Menu</span>
-      </button>
-      <button class="btn btn-sm btn-outline-light rounded-pill px-3 fw-bold" onclick="openCreateCategoryModal()">
-        <i class="fa-solid fa-layer-group me-1"></i> <span data-i18n="btn_add_category">Kria Kategoria</span>
-      </button>
+      <h1 class="page-title" id="overview-title" data-i18n="nav_overview">Rezumu</h1>
+      <p class="page-subtitle">{{ current_restaurant.name }} &middot; USD &middot; {{ current_restaurant.timezone }}</p>
     </div>
   </div>
 
-  <!-- Top Metrics Cards -->
-  <div class="row g-3 mb-4">
-    <!-- Card 1: Sales Today -->
-    <div class="col-md-3 col-sm-6">
-      <div class="glass-card p-3 border-start border-4 border-success h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <small class="text-white-50 text-uppercase fw-bold d-flex align-items-center gap-1 mb-1">
-              <i class="fa-solid fa-sack-dollar text-success"></i> <span data-i18n="revenue_today">Rendimentu Ohin</span>
-            </small>
-            <h3 class="fw-bold text-success mb-0">${{ metrics.today_sales }}</h3>
-          </div>
-          <div class="bg-success bg-opacity-20 text-success rounded-circle p-3">
-            <i class="fa-solid fa-cash-register fa-xl"></i>
-          </div>
-        </div>
-        <div class="text-white-50 small mt-2 d-flex align-items-center gap-1 pt-2 border-top border-white border-opacity-10">
-          <i class="fa-solid fa-circle-check text-success"></i>
-          <span>{{ metrics.payments_count }} <span data-i18n="transactions_completed">Transasaun Remata</span></span>
+  <div class="kpi-grid mb-3">
+    <div class="kpi">
+      <div class="kpi-label" data-i18n="revenue_today">Rendimentu ohin</div>
+      <div class="kpi-value">${{ metrics.today_sales }}</div>
+      <div class="kpi-note">{{ metrics.payments_count }} <span data-i18n="transactions_completed">transasaun</span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label" data-i18n="total_orders">Pedidu ohin</div>
+      <div class="kpi-value">{{ metrics.total_orders_count }}</div>
+      <div class="kpi-note">{{ metrics.active_kitchen_count }} <span data-i18n="active_in_kitchen">iha dapur</span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label" data-i18n="table_occupancy">Meza okupadu</div>
+      <div class="kpi-value">{{ metrics.occupied_tables }}<span class="text-tertiary fs-6"> / {{ metrics.total_tables }}</span></div>
+      <div class="kpi-note" data-i18n="tables_occupied_now">Agora</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label" data-i18n="rejected_orders">Rekuza</div>
+      <div class="kpi-value" {% if metrics.rejected_count %}style="color:var(--danger)"{% endif %}>{{ metrics.rejected_count }}</div>
+      <div class="kpi-note" data-i18n="rejected_before_kitchen">Molok to'o dapur</div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <h2 class="section-title mb-2" data-i18n="top_items_title">Menu fa'an barak liu ohin</h2>
+        <div class="table-responsive">
+          <table class="table table-app table-stack">
+            <thead><tr><th data-i18n="th_menu_col">Menu</th><th class="text-end" data-i18n="th_qty_sold">Fa'an</th><th class="text-end" data-i18n="th_total_rev">Rendimentu</th></tr></thead>
+            <tbody>
+              {% for item in metrics.top_items %}
+                <tr>
+                  <td class="cell-primary fw-semibold">{{ item.menu_name_snapshot }}</td>
+                  <td class="text-end tabular" data-label="Fa'an" data-i18n-label="th_qty_sold">{{ item.qty_sold }}</td>
+                  <td class="text-end tabular" data-label="Rendimentu" data-i18n-label="th_total_rev">${{ item.revenue }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="3" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i><div data-i18n="no_sales_today">Seidauk iha vendas ohin.</div></div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
-
-    <!-- Card 2: Total Orders -->
-    <div class="col-md-3 col-sm-6">
-      <div class="glass-card p-3 border-start border-4 border-primary h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <small class="text-white-50 text-uppercase fw-bold d-flex align-items-center gap-1 mb-1">
-              <i class="fa-solid fa-receipt text-primary"></i> <span data-i18n="total_orders">Totál Pedidu</span>
-            </small>
-            <h3 class="fw-bold text-primary mb-0">{{ metrics.total_orders_count }}</h3>
-          </div>
-          <div class="bg-primary bg-opacity-20 text-primary rounded-circle p-3">
-            <i class="fa-solid fa-utensils fa-xl"></i>
-          </div>
-        </div>
-        <div class="text-white-50 small mt-2 d-flex align-items-center gap-1 pt-2 border-top border-white border-opacity-10">
-          <i class="fa-solid fa-fire-burner text-info"></i>
-          <span>{{ metrics.active_kitchen_count }} <span data-i18n="active_in_kitchen">Ativu iha Dapur</span></span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Card 3: Table Occupancy -->
-    <div class="col-md-3 col-sm-6">
-      <div class="glass-card p-3 border-start border-4 border-warning h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <small class="text-white-50 text-uppercase fw-bold d-flex align-items-center gap-1 mb-1">
-              <i class="fa-solid fa-chair text-warning"></i> <span data-i18n="table_occupancy">Okupasaun Meza</span>
-            </small>
-            <h3 class="fw-bold text-warning mb-0">{{ metrics.occupied_tables }} / {{ metrics.total_tables }}</h3>
-          </div>
-          <div class="bg-warning bg-opacity-20 text-warning rounded-circle p-3">
-            <i class="fa-solid fa-table-cells fa-xl"></i>
-          </div>
-        </div>
-        <div class="text-white-50 small mt-2 d-flex align-items-center gap-1 pt-2 border-top border-white border-opacity-10">
-          <i class="fa-solid fa-users text-warning"></i>
-          <span data-i18n="tables_occupied_now">Meza Preeñxe Atual</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Card 4: Rejected / Fake Orders -->
-    <div class="col-md-3 col-sm-6">
-      <div class="glass-card p-3 border-start border-4 border-danger h-100 shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <small class="text-white-50 text-uppercase fw-bold d-flex align-items-center gap-1 mb-1">
-              <i class="fa-solid fa-ban text-danger"></i> <span data-i18n="rejected_orders">Rekuza / Falsu</span>
-            </small>
-            <h3 class="fw-bold text-danger mb-0">{{ metrics.rejected_count }}</h3>
-          </div>
-          <div class="bg-danger bg-opacity-20 text-danger rounded-circle p-3">
-            <i class="fa-solid fa-shield-halved fa-xl"></i>
-          </div>
-        </div>
-        <div class="text-white-50 small mt-2 d-flex align-items-center gap-1 pt-2 border-top border-white border-opacity-10">
-          <i class="fa-solid fa-triangle-exclamation text-danger"></i>
-          <span data-i18n="rejected_before_kitchen">Kaixa Rekuza Molok Dapur</span>
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <h2 class="section-title mb-2" data-i18n="recent_payments_title">Pagamentu foun</h2>
+        <div class="table-responsive">
+          <table class="table table-app table-stack">
+            <thead><tr><th data-i18n="th_table">Meza</th><th data-i18n="th_time">Oras</th><th data-i18n="th_receipt_num">Resibu</th><th class="text-end" data-i18n="th_amount">Montante</th></tr></thead>
+            <tbody>
+              {% for tx in metrics.recent_transactions %}
+                <tr>
+                  <td class="cell-primary"><div class="d-flex justify-content-between"><strong>{{ tx.table_session.table.display_name }}</strong><span class="price d-md-none">${{ tx.amount }}</span></div></td>
+                  <td data-label="Oras" data-i18n-label="th_time" class="tabular">{{ tx.created_at|date:"d/m H:i" }}</td>
+                  <td data-label="Resibu" data-i18n-label="th_receipt_num"><span class="code-text">{{ tx.payment_code }}</span></td>
+                  <td class="text-end tabular fw-semibold d-none d-md-table-cell">${{ tx.amount }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-receipt" aria-hidden="true"></i><div data-i18n="no_payments_today">Seidauk iha pagamentu.</div></div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   </div>
+</section>
 
-  <div class="tab-content" id="adminTabContent">
-    
-    <!-- Tab 1: Menu Items & Stock Availability (Full CRUD) -->
-    <div class="tab-pane fade show active" id="menu-panel">
-      <div class="glass-card p-3 p-md-4">
-        
-        <!-- Action Toolbar -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-3 border-bottom border-white border-opacity-10">
-          <div>
-            <h5 class="fw-bold mb-1 text-white d-flex align-items-center gap-2">
-              <i class="fa-solid fa-bowl-food text-warning"></i>
-              <span data-i18n="menu_stock_title">Lista Menu &amp; Disponibilidade Stok</span>
-            </h5>
-            <small class="text-white-50" data-i18n="menu_stock_desc">Jestaun kompletu menu, presu, foto, no status stok</small>
-          </div>
-          <div class="d-flex align-items-center gap-2 flex-wrap">
-            <button class="btn btn-warning rounded-pill px-3 py-1.5 fw-bold text-dark shadow-sm d-flex align-items-center gap-1.5" onclick="openCreateMenuItemModal()">
-              <i class="fa-solid fa-plus-circle"></i> <span data-i18n="btn_add_menu">Aumenta Menu Foun</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Filter & Search Toolbar -->
-        <div class="row g-2 align-items-center mb-3">
-          <div class="col-12 col-md-5">
-            <div class="input-group input-group-sm">
-              <span class="input-group-text bg-dark border-secondary border-opacity-50 text-white-50">
-                <i class="fa-solid fa-magnifying-glass"></i>
-              </span>
-              <input type="text" id="admin-menu-search" class="form-control bg-dark border-secondary border-opacity-50 text-white" placeholder="Buka tuir naran menu, SKU, deskrisaun..." oninput="filterAdminMenuItems()">
-            </div>
-          </div>
-          <div class="col-12 col-md-7">
-            <!-- Category Filter Pills -->
-            <div class="d-flex align-items-center gap-2">
-              <span class="text-white-50 small fw-bold text-nowrap d-none d-sm-inline-flex align-items-center gap-1">
-                <i class="fa-solid fa-filter text-warning small"></i>
-                <span>Filtra tuir Kategoria:</span>
-              </span>
-              <div class="d-flex gap-1.5 overflow-x-auto pb-1 align-items-center flex-nowrap" style="scrollbar-width: thin;">
-                <button class="btn btn-sm btn-warning rounded-pill px-2.5 py-0.5 active fw-bold admin-cat-pill text-dark shadow-sm" data-cat="all" data-cat-name="Menu Hotu" onclick="filterAdminMenuByCategory('all', this)">
-                  Totál ({{ menu_items|length }})
-                </button>
-                {% for cat in categories %}
-                  <button class="btn btn-sm btn-outline-light rounded-pill px-2.5 py-0.5 admin-cat-pill text-white-50" data-cat="{{ cat.id }}" data-cat-name="{{ cat.name|escape }}" onclick="filterAdminMenuByCategory('{{ cat.id }}', this)">
-                    <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} me-1 small"></i>{{ cat.name }}
-                    <span class="badge bg-black bg-opacity-40 rounded-pill ms-1 text-white-50" style="font-size:0.7rem;">{{ cat.item_count|default:cat.items.count }}</span>
-                  </button>
-                {% endfor %}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Active Category Indicator Bar (dynamically visible when a category is selected) -->
-        <div id="active-cat-indicator-bar" class="p-2.5 px-3 mb-3 rounded-3 bg-dark bg-opacity-75 border border-warning border-opacity-35 d-flex flex-wrap align-items-center justify-content-between gap-2 shadow-sm" style="display: none !important;">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark fw-bold rounded-pill px-2.5 py-1 d-inline-flex align-items-center gap-1">
-              <i class="fa-solid fa-filter"></i> <span>Filtra iha Lista Menu:</span>
-            </span>
-            <strong class="text-white fs-6" id="active-cat-name-display">-</strong>
-            <span class="badge bg-white bg-opacity-15 text-white rounded-pill px-2.5 py-0.5 small" id="active-cat-count-display">0 Itens</span>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <button class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="openCreateMenuItemModal(currentActiveMenuCat)">
-              <i class="fa-solid fa-plus-circle"></i> <span>Aumenta Menu ba Kategoria Ne'e</span>
-            </button>
-            <button class="btn btn-sm btn-outline-light text-white-50 rounded-pill px-2.5 py-1" onclick="filterAdminMenuByCategory('all')">
-              <i class="fa-solid fa-xmark me-1"></i> Hare Hotu
-            </button>
-          </div>
-        </div>
-
-        <!-- Menu Table -->
-        <div class="table-responsive">
-          <table class="table table-dark table-hover align-middle mb-0" id="admin-menu-table">
-            <thead class="text-white-50 border-secondary">
-              <tr>
-                <th style="min-width: 220px;" data-i18n="th_menu_col">Menu &amp; Foto</th>
-                <th data-i18n="th_cat_col">Kategoria</th>
-                <th data-i18n="th_price_col">Presu (USD)</th>
-                <th data-i18n="th_stock_status">Status Stok</th>
-                <th class="text-end" style="min-width: 170px;" data-i18n="actions">Asaun</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for item in menu_items %}
-                <tr class="admin-menu-row" data-id="{{ item.id }}" data-cat-id="{{ item.category_id }}" data-name="{{ item.name|lower }}" data-sku="{{ item.sku|default:''|lower }}" data-desc="{{ item.description|default:''|lower }}">
-                  <td>
-                    <div class="d-flex align-items-center gap-2.5">
-                      <div class="position-relative flex-shrink-0">
-                        <img src="{{ item.display_image }}" alt="{{ item.name }}" class="rounded-3 shadow-sm border border-secondary border-opacity-25" style="width: 48px; height: 48px; object-fit: cover;" onerror="this.src='/static/icons/default-food.png'">
-                        {% if item.is_featured %}
-                          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark p-1" title="Menu Destaque">
-                            <i class="fa-solid fa-star" style="font-size: 0.6rem;"></i>
-                          </span>
-                        {% endif %}
-                      </div>
-                      <div class="text-truncate">
-                        <strong class="text-white d-block text-truncate fs-6" title="{{ item.name }}">{{ item.name }}</strong>
-                        <div class="d-flex align-items-center gap-1.5 flex-wrap">
-                          {% if item.sku %}
-                            <code class="text-warning small px-1.5 py-0 bg-dark rounded border border-secondary border-opacity-25" style="font-size: 0.72rem;">{{ item.sku }}</code>
-                          {% endif %}
-                          {% if item.description %}
-                            <small class="text-white-50 text-truncate d-none d-lg-inline" style="max-width: 200px;" title="{{ item.description }}">{{ item.description }}</small>
-                          {% endif %}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <button type="button" class="badge bg-dark border border-secondary border-opacity-50 text-white-50 px-2.5 py-1 rounded-pill btn btn-sm p-1 text-decoration-none d-inline-flex align-items-center gap-1" onclick="filterAdminMenuByCategory('{{ item.category_id }}')" title="Filtra menu tuir kategoria {{ item.category.name }}">
-                      <i class="fa-solid fa-{{ item.category.icon_name|default:'utensils' }} text-warning small"></i>
-                      <span>{{ item.category.name }}</span>
-                    </button>
-                  </td>
-                  <td>
-                    <span class="fw-bold text-warning fs-6">${{ item.price }}</span>
-                  </td>
-                  <td>
-                    {% if item.availability == 'AVAILABLE' %}
-                      <span class="badge bg-success bg-opacity-25 border border-success text-success rounded-pill px-2.5 py-1" data-i18n="stock_available">Iha (Available)</span>
-                    {% elif item.availability == 'SOLD_OUT' %}
-                      <span class="badge bg-danger bg-opacity-25 border border-danger text-danger rounded-pill px-2.5 py-1" data-i18n="stock_sold_out">Hotu (Sold Out)</span>
-                    {% else %}
-                      <span class="badge bg-secondary bg-opacity-25 border border-secondary text-white-50 rounded-pill px-2.5 py-1" data-i18n="stock_inactive">La-Ativu</span>
-                    {% endif %}
-                  </td>
-                  <td class="text-end">
-                    <div class="d-inline-flex gap-1 align-items-center">
-                      <!-- Quick Stock Toggle -->
-                      <button class="btn btn-sm rounded-pill px-2.5 py-1 fw-semibold {% if item.availability == 'AVAILABLE' %}btn-outline-danger{% else %}btn-outline-success{% endif %}" onclick="toggleMenuItem('{{ item.id }}')" title="{% if item.availability == 'AVAILABLE' %}Marka Hotu{% else %}Marka Iha{% endif %}">
-                        {% if item.availability == 'AVAILABLE' %}
-                          <i class="fa-solid fa-ban"></i> <span class="d-none d-xl-inline ms-1" data-i18n="btn_mark_sold_out">Hotu</span>
-                        {% else %}
-                          <i class="fa-solid fa-check"></i> <span class="d-none d-xl-inline ms-1" data-i18n="btn_mark_available">Iha</span>
-                        {% endif %}
-                      </button>
-                      
-                      <!-- Edit Button -->
-                      <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openEditMenuItemModal('{{ item.id }}')" title="Edita Menu">
-                        <i class="fa-solid fa-pen-to-square small"></i>
-                      </button>
-
-                      <!-- Delete Button -->
-                      <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="confirmDeleteMenuItem('{{ item.id }}', '{{ item.name|escapejs }}')" title="Hamos Menu">
-                        <i class="fa-solid fa-trash-can small"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              {% empty %}
-                <tr>
-                  <td colspan="5" class="text-center text-white-50 py-4">
-                    <i class="fa-solid fa-bowl-food fa-2x mb-2 text-warning opacity-50 d-block"></i>
-                    Seidauk iha menu item. Klik butaun "Aumenta Menu Foun" atu kria primeiru menu.
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
+<!-- Menu -->
+<section class="app-panel" id="menu-panel" aria-labelledby="menu-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="menu-title" data-i18n="menu_stock_title">Menu no stok</h1>
+      <p class="page-subtitle" data-i18n="menu_stock_desc">Jere menu, presu, foto no disponibilidade.</p>
     </div>
-
-    <!-- Tab 2: Categories Management (Full CRUD) -->
-    <div class="tab-pane fade" id="categories-panel">
-      <div class="glass-card p-3 p-md-4">
-        
-        <!-- Action Toolbar -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-3 border-bottom border-white border-opacity-10">
-          <div>
-            <h5 class="fw-bold mb-1 text-white d-flex align-items-center gap-2">
-              <i class="fa-solid fa-layer-group text-warning"></i>
-              <span data-i18n="categories_title">Kategoria Menu</span>
-            </h5>
-            <small class="text-white-50" data-i18n="categories_desc">Jestaun kategoria hahán, hemu no sobremesa</small>
-          </div>
-          <div>
-            <button class="btn btn-warning rounded-pill px-3 py-1.5 fw-bold text-dark shadow-sm d-flex align-items-center gap-1.5" onclick="openCreateCategoryModal()">
-              <i class="fa-solid fa-plus-circle"></i> <span data-i18n="btn_add_category">Kria Kategoria Foun</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Categories KPI Summary -->
-        <div class="row g-2 mb-3">
-          <div class="col-md-4 col-sm-6">
-            <div class="p-2.5 rounded-3 bg-dark bg-opacity-50 border border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
-              <div class="d-flex align-items-center gap-2">
-                <i class="fa-solid fa-tags text-warning fs-5"></i>
-                <small class="text-white-50">Totál Kategoria</small>
-              </div>
-              <strong class="text-white fs-6" id="cat-kpi-total">{{ categories|length }}</strong>
-            </div>
-          </div>
-          <div class="col-md-4 col-sm-6">
-            <div class="p-2.5 rounded-3 bg-dark bg-opacity-50 border border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
-              <div class="d-flex align-items-center gap-2">
-                <i class="fa-solid fa-circle-check text-success fs-5"></i>
-                <small class="text-white-50">Kategoria Ativu</small>
-              </div>
-              <strong class="text-success fs-6" id="cat-kpi-active">
-                {% with active_cats=0 %}
-                  {% for c in categories %}{% if c.is_active %}{{ forloop.counter }}{% endif %}{% endfor %}
-                {% endwith %}
-                {{ categories|length }}
-              </strong>
-            </div>
-          </div>
-          <div class="col-md-4 col-sm-12">
-            <div class="p-2.5 rounded-3 bg-dark bg-opacity-50 border border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
-              <div class="d-flex align-items-center gap-2">
-                <i class="fa-solid fa-utensils text-info fs-5"></i>
-                <small class="text-white-50">Totál Menu Iha Sistema</small>
-              </div>
-              <strong class="text-info fs-6">{{ menu_items|length }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- Categories Table -->
-        <div class="table-responsive">
-          <table class="table table-dark table-hover align-middle mb-0" id="admin-category-table">
-            <thead class="text-white-50 border-secondary">
-              <tr>
-                <th style="min-width: 200px;">Kategoria &amp; Ikone</th>
-                <th>Slug (URL Key)</th>
-                <th>Deskrisaun</th>
-                <th class="text-center">Ordem</th>
-                <th class="text-center">Totál Menu</th>
-                <th class="text-center">Status</th>
-                <th class="text-end" style="min-width: 280px;" data-i18n="actions">Asaun</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for cat in categories %}
-                <tr class="admin-cat-row" data-id="{{ cat.id }}" data-name="{{ cat.name|lower }}" data-slug="{{ cat.slug|lower }}">
-                  <td>
-                    <div class="d-flex align-items-center gap-2.5">
-                      <div class="rounded-3 bg-warning bg-opacity-15 text-warning border border-warning border-opacity-25 d-flex align-items-center justify-content-center shadow-sm" style="width: 40px; height: 40px;">
-                        <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} fs-5"></i>
-                      </div>
-                      <div>
-                        <strong class="text-white fs-6 d-block">{{ cat.name }}</strong>
-                        <small class="text-white-50"><i class="fa-solid fa-icons me-1 small"></i>{{ cat.icon_name|default:'utensils' }}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <code class="text-warning small px-2 py-0.5 bg-dark rounded border border-secondary border-opacity-25">{{ cat.slug }}</code>
-                  </td>
-                  <td>
-                    <span class="text-white-50 small">{{ cat.description|default:"-" }}</span>
-                  </td>
-                  <td class="text-center">
-                    <span class="badge bg-dark border border-secondary border-opacity-50 text-white px-2 py-1 rounded-pill">{{ cat.sort_order }}</span>
-                  </td>
-                  <td class="text-center">
-                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm" onclick="toggleCategoryMenuAccordion('{{ cat.id }}')" title="Klik atu hare no jere menu iha kategoria ne'e">
-                      <i class="fa-solid fa-bowl-food text-warning"></i>
-                      <span>{{ cat.item_count|default:cat.items.count }} Itens</span>
-                      <i class="fa-solid fa-chevron-down small ms-1" id="cat-chevron-{{ cat.id }}" style="transition: transform 0.25s ease;"></i>
-                    </button>
-                  </td>
-                  <td class="text-center">
-                    {% if cat.is_active %}
-                      <button class="btn btn-sm btn-outline-success rounded-pill px-2.5 py-0.5 fw-semibold" onclick="toggleCategoryStatus('{{ cat.id }}')" title="Klik atu desativa">
-                        <i class="fa-solid fa-circle-check me-1 small"></i>Ativu
-                      </button>
-                    {% else %}
-                      <button class="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-0.5 fw-semibold" onclick="toggleCategoryStatus('{{ cat.id }}')" title="Klik atu ativa">
-                        <i class="fa-solid fa-circle-xmark me-1 small"></i>La-Ativu
-                      </button>
-                    {% endif %}
-                  </td>
-                  <td class="text-end">
-                    <div class="d-inline-flex gap-1.5 align-items-center flex-wrap justify-content-end">
-                      <!-- Prominent "Filtra iha Lista Menu" button -->
-                      <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm" onclick="goToCategoryInMenuPanel('{{ cat.id }}')" title="Filtra menu hosi kategoria {{ cat.name }} iha tab Lista Menu">
-                        <i class="fa-solid fa-filter text-info small"></i>
-                        <span>Filtra iha Lista Menu</span>
-                      </button>
-
-                      <!-- Quick Add Menu to this category -->
-                      <button class="btn btn-sm btn-outline-success rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openCreateMenuItemModal('{{ cat.id }}')" title="Aumenta Menu ba Kategoria ne'e">
-                        <i class="fa-solid fa-plus small"></i>
-                      </button>
-
-                      <!-- Edit Category Button -->
-                      <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="openEditCategoryModal('{{ cat.id }}')" title="Edita Kategoria">
-                        <i class="fa-solid fa-pen-to-square small"></i>
-                      </button>
-
-                      <!-- Delete Category Button -->
-                      <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" onclick="confirmDeleteCategory('{{ cat.id }}', '{{ cat.name|escapejs }}', {{ cat.item_count|default:cat.items.count }})" title="Hamos Kategoria">
-                        <i class="fa-solid fa-trash-can small"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-
-                <!-- Sub-row: Menus Assigned to Category {{ cat.name }} -->
-                <tr id="cat-menu-subrow-{{ cat.id }}" class="cat-menu-subrow" style="display: none;">
-                  <td colspan="7" class="p-0 border-0">
-                    <div class="p-3 my-2 mx-1 rounded-3 bg-black bg-opacity-60 border border-warning border-opacity-30 shadow-lg">
-                      
-                      <!-- Header with Actions -->
-                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-2 border-bottom border-white border-opacity-10">
-                        <div class="d-flex align-items-center gap-2">
-                          <div class="rounded-circle bg-warning bg-opacity-20 text-warning d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;">
-                            <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} small"></i>
-                          </div>
-                          <div>
-                            <strong class="text-white fs-6">Menu sira ne'ebé asigna ba: <span class="text-warning">{{ cat.name }}</span></strong>
-                            <small class="text-white-50 d-block">{{ cat.slug }} &bull; Totál: {{ cat.items.all|length }} menu</small>
-                          </div>
-                        </div>
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                          <button class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="openCreateMenuItemModal('{{ cat.id }}')">
-                            <i class="fa-solid fa-plus-circle"></i> <span>Aumenta Menu ba Kategoria Ne'e</span>
-                          </button>
-                          <button class="btn btn-sm btn-info text-dark fw-bold rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1.5" onclick="goToCategoryInMenuPanel('{{ cat.id }}')">
-                            <i class="fa-solid fa-filter small"></i> <span>Filtra iha Lista Menu</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- Menu Items Cards inside Category -->
-                      {% if cat.items.all %}
-                        <div class="row g-2">
-                          {% for item in cat.items.all %}
-                            <div class="col-12 col-md-6 col-lg-4">
-                              <div class="p-2.5 rounded-3 bg-dark bg-opacity-80 border border-secondary border-opacity-35 d-flex align-items-center justify-content-between gap-2 shadow-sm h-100">
-                                <div class="d-flex align-items-center gap-2.5 min-w-0">
-                                  <img src="{{ item.display_image }}" alt="{{ item.name }}" class="rounded-2 border border-secondary border-opacity-25 flex-shrink-0" style="width: 44px; height: 44px; object-fit: cover;" onerror="this.src='/static/icons/default-food.png'">
-                                  <div class="min-w-0">
-                                    <strong class="text-white small d-block text-truncate" title="{{ item.name }}">{{ item.name }}</strong>
-                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-0.5">
-                                      <span class="text-warning fw-bold small">${{ item.price }}</span>
-                                      {% if item.availability == 'AVAILABLE' %}
-                                        <span class="badge bg-success bg-opacity-25 border border-success text-success rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">Iha</span>
-                                      {% elif item.availability == 'SOLD_OUT' %}
-                                        <span class="badge bg-danger bg-opacity-25 border border-danger text-danger rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">Hotu</span>
-                                      {% else %}
-                                        <span class="badge bg-secondary bg-opacity-25 border border-secondary text-white-50 rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">La-Ativu</span>
-                                      {% endif %}
-                                      {% if item.sku %}
-                                        <code class="text-white-50 small bg-black px-1 rounded" style="font-size: 0.68rem;">{{ item.sku }}</code>
-                                      {% endif %}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div class="d-flex align-items-center gap-1 flex-shrink-0">
-                                  <button class="btn btn-sm btn-outline-warning rounded-circle d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; padding: 0;" onclick="openEditMenuItemModal('{{ item.id }}')" title="Edita Menu">
-                                    <i class="fa-solid fa-pen-to-square" style="font-size: 0.75rem;"></i>
-                                  </button>
-                                  <button class="btn btn-sm btn-outline-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; padding: 0;" onclick="confirmDeleteMenuItem('{{ item.id }}', '{{ item.name|escapejs }}')" title="Hamos Menu">
-                                    <i class="fa-solid fa-trash-can" style="font-size: 0.75rem;"></i>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          {% endfor %}
-                        </div>
-                      {% else %}
-                        <div class="p-3 text-center text-white-50 rounded-3 border border-dashed border-secondary border-opacity-35 my-1">
-                          <i class="fa-solid fa-bowl-food fa-lg text-warning opacity-50 mb-1 d-block"></i>
-                          <small class="d-block mb-2">Seidauk iha menu ne'ebé asigna ba kategoria <strong>{{ cat.name }}</strong>.</small>
-                          <button class="btn btn-sm btn-outline-warning rounded-pill px-3 py-1 fw-bold" onclick="openCreateMenuItemModal('{{ cat.id }}')">
-                            <i class="fa-solid fa-plus me-1"></i> Aumenta Menu Primeiru ba Kategoria Ne'e
-                          </button>
-                        </div>
-                      {% endif %}
-
-                    </div>
-                  </td>
-                </tr>
-              {% empty %}
-                <tr>
-                  <td colspan="7" class="text-center text-white-50 py-4">
-                    <i class="fa-solid fa-layer-group fa-2x mb-2 text-warning opacity-50 d-block"></i>
-                    Seidauk iha kategoria. Klik "Kria Kategoria Foun" atu kria primeiru kategoria.
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 3: Tables & QR Code Management -->
-    <div class="tab-pane fade" id="tables-panel">
-      <div class="glass-card p-3 p-md-4">
-        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10">
-          <h5 class="fw-bold mb-0 text-white" data-i18n="tables_qr_title">Lista Meza &amp; Seguransa Token QR</h5>
-          <a href="{% url 'admin-qr-sheet' %}" target="_blank" class="btn btn-sm btn-outline-light rounded-pill px-3">
-            <i class="fa-solid fa-print me-1"></i> <span data-i18n="btn_print_qr_sheet">Folha Print QR</span>
-          </a>
-        </div>
-
-        <div class="table-responsive">
-          <table class="table table-dark table-hover align-middle mb-0">
-            <thead class="text-white-50 border-secondary">
-              <tr>
-                <th data-i18n="th_table_code">Kódigu Meza</th>
-                <th data-i18n="th_table_name">Naran Meza</th>
-                <th data-i18n="th_capacity">Kapasidade</th>
-                <th data-i18n="th_current_status">Status Atual</th>
-                <th data-i18n="th_qr_token">QR Token (128-bit)</th>
-                <th data-i18n="th_qr_rotation">Rotasaun Token QR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for t in tables %}
-                <tr>
-                  <td><strong class="text-white">{{ t.table_code }}</strong></td>
-                  <td>{{ t.display_name }}</td>
-                  <td>{{ t.capacity }} Kursi</td>
-                  <td>
-                    <span class="badge badge-status status-{{ t.status|lower }}">{{ t.status }}</span>
-                  </td>
-                  <td>
-                    <code class="text-warning small">{{ t.qr_token|slice:":16" }}...</code>
-                    <a href="/t/{{ t.qr_token }}/" target="_blank" class="ms-1 text-info small" title="Loke Menu"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
-                  </td>
-                  <td>
-                    <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="rotateTableQR('{{ t.id }}', '{{ t.display_name }}')">
-                      <i class="fa-solid fa-arrows-rotate me-1"></i> <span data-i18n="btn_rotate_qr">Troka QR</span>
-                    </button>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 4: Staff Management -->
-    <div class="tab-pane fade" id="users-panel">
-      <div class="glass-card p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-white border-opacity-10">
-          <h5 class="fw-bold mb-0 text-white">
-            <i class="fa-solid fa-users text-success me-2"></i> <span data-i18n="staff_mgmt_title">Jestaun Uzuáriu &amp; Papél Funsionáriu</span>
-          </h5>
-          <button class="btn btn-sm btn-warning rounded-pill px-3 fw-bold text-dark" data-bs-toggle="modal" data-bs-target="#createUserModal">
-            <i class="fa-solid fa-plus me-1"></i> <span data-i18n="btn_create_user">Kria Uzuáriu Foun</span>
-          </button>
-        </div>
-
-        <p class="text-white-50 small mb-3" data-i18n="staff_mgmt_desc">
-          Ita-boot bele kria konta foun ba <strong>Kaixa (Cashier)</strong> ka <strong>Dapur (Kitchen KDS)</strong> direitamente iha ne'e laiha nesesidade atu tama ba Django Admin.
-        </p>
-
-        <div class="alert alert-dark border border-secondary text-white-50 small">
-          <i class="fa-solid fa-shield-halved text-warning me-2"></i>
-          <span data-i18n="staff_mgmt_alert">Kada funsionáriu ne'ebé kria sei asesu de'it ba sira-nia tela tuir papél (Kaixa sei la haree KDS, no Dapur sei la haree POS ka Relatóriu).</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 5: Sales Report & Ranking -->
-    <div class="tab-pane fade" id="reports-panel">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="glass-card p-3 h-100">
-            <h5 class="fw-bold mb-3 text-warning"><i class="fa-solid fa-ranking-star me-2"></i> <span data-i18n="top_items_title">Menu Favoritu Ohin</span></h5>
-            <div class="table-responsive">
-              <table class="table table-dark table-sm align-middle mb-0">
-                <thead class="text-white-50 border-secondary">
-                  <tr>
-                    <th data-i18n="th_menu_col">Menu</th>
-                    <th data-i18n="th_qty_sold">Kuantidade Fa'an</th>
-                    <th data-i18n="th_total_rev">Totál Rendimentu</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for item in metrics.top_items %}
-                    <tr>
-                      <td class="fw-bold text-white">{{ item.menu_name_snapshot }}</td>
-                      <td><span class="badge bg-warning bg-opacity-25 border border-warning text-warning fs-6">{{ item.qty_sold }} <span data-i18n="portions">porsaun</span></span></td>
-                      <td class="fw-bold text-success">${{ item.revenue }}</td>
-                    </tr>
-                  {% empty %}
-                    <tr><td colspan="3" class="text-center text-white-50 py-3" data-i18n="no_sales_today">Seidauk iha dadus vendas ohin nian.</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="glass-card p-3 h-100">
-            <h5 class="fw-bold mb-3 text-primary"><i class="fa-solid fa-receipt me-2"></i> <span data-i18n="recent_payments_title">Transasaun Pagamentu Foun</span></h5>
-            <div class="table-responsive">
-              <table class="table table-dark table-sm align-middle mb-0">
-                <thead class="text-white-50 border-secondary">
-                  <tr>
-                    <th data-i18n="th_time">Oras</th>
-                    <th data-i18n="th_table">Meza</th>
-                    <th data-i18n="th_receipt_num">Nú. Resibu</th>
-                    <th data-i18n="th_amount">Montante</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for tx in metrics.recent_transactions %}
-                    <tr>
-                      <td class="small text-white-50">{{ tx.created_at|date:"H:i" }}</td>
-                      <td><strong class="text-white">{{ tx.table_session.table.display_name }}</strong></td>
-                      <td><code class="text-warning">{{ tx.payment_code }}</code></td>
-                      <td class="fw-bold text-success">${{ tx.amount }}</td>
-                    </tr>
-                  {% empty %}
-                    <tr><td colspan="4" class="text-center text-white-50 py-3" data-i18n="no_payments_today">Seidauk iha transasaun pagamentu ohin nian.</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 6: Audit Logs -->
-    <div class="tab-pane fade" id="audit-panel">
-      <div class="glass-card p-3">
-        <h5 class="fw-bold mb-3 text-white"><i class="fa-solid fa-shield-halved text-warning me-2"></i> <span data-i18n="audit_title">Rejistu Auditoria Seguransa &amp; Finanseiru</span></h5>
-        <div class="table-responsive">
-          <table class="table table-dark table-sm table-hover align-middle small mb-0">
-            <thead class="text-white-50 border-secondary">
-              <tr>
-                <th data-i18n="th_time">Oras</th>
-                <th data-i18n="th_actor">Atór / Papél</th>
-                <th data-i18n="th_action_col">Asaun</th>
-                <th data-i18n="th_entity">Entidade</th>
-                <th data-i18n="th_snapshot">Detallu Snapshot</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for event in audit_events %}
-                <tr>
-                  <td class="text-white-50">{{ event.created_at|date:"Y-m-d H:i:s" }}</td>
-                  <td>
-                    <strong class="text-white">{{ event.actor_user.username|default:"SYSTEM" }}</strong>
-                    <span class="badge bg-secondary ms-1">{{ event.actor_role }}</span>
-                  </td>
-                  <td><span class="badge bg-warning bg-opacity-25 border border-warning text-warning">{{ event.action }}</span></td>
-                  <td class="text-white-50">{{ event.entity_type }}:{{ event.entity_id|slice:":8" }}</td>
-                  <td>
-                    <code class="text-white-50">{{ event.after_data }}</code>
-                  </td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="5" class="text-center text-white-50 py-3" data-i18n="no_audit_logs">Seidauk iha rejistu auditoria.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
+    <button type="button" class="btn btn-primary" onclick="openCreateMenuItemModal()"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="btn_add_menu">Aumenta menu</span></button>
   </div>
 
-</div>
+  <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+    <div class="search-field flex-shrink-0" style="min-width:240px">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" id="admin-menu-search" class="form-control" placeholder="Buka naran, SKU, deskrisaun" data-i18n-placeholder="admin_menu_search_placeholder" oninput="filterAdminMenuItems()" aria-label="Buka menu">
+    </div>
+    <div class="chip-row align-items-center min-w-0" role="toolbar" aria-label="Kategoria">
+      <button type="button" class="chip active admin-cat-pill" data-cat="all" onclick="filterAdminMenuByCategory('all')"><span data-i18n="all_menu">Hotu</span> <span class="chip-count">{{ menu_items|length }}</span></button>
+      {% for cat in categories %}
+        <button type="button" class="chip admin-cat-pill" data-cat="{{ cat.id }}" onclick="filterAdminMenuByCategory('{{ cat.id }}')">{{ cat.name }} <span class="chip-count">{{ cat.item_count|default:0 }}</span></button>
+      {% endfor %}
+    </div>
+  </div>
 
-<!-- ============================================================== -->
-<!-- MODALS FOR MENU ITEM & CATEGORY CRUD                           -->
-<!-- ============================================================== -->
-
-<!-- Create / Edit Menu Item Modal -->
-<div class="modal fade" id="menuItemModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content glass-card border-warning border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
-          <i class="fa-solid fa-bowl-food text-warning"></i>
-          <span id="menu-modal-title">Aumenta Menu Foun</span>
-        </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        <form id="menu-item-form" onsubmit="event.preventDefault(); submitMenuItemForm();">
-          <input type="hidden" id="menu-item-id" value="">
-
-          <div class="row g-3">
-            <!-- Left Column: Primary Details -->
-            <div class="col-md-7">
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_name">Naran Menu <span class="text-danger">*</span>:</label>
-                <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="menu-form-name" placeholder="Ez: Ikan Saboko Celvass" required>
-              </div>
-
-              <div class="row g-2 mb-3">
-                <div class="col-sm-6">
-                  <label class="form-label small fw-bold text-white" data-i18n="menu_category">Kategoria <span class="text-danger">*</span>:</label>
-                  <select class="form-select bg-dark border-secondary border-opacity-50 text-white" id="menu-form-category" required>
-                    <option value="" disabled selected>Hili Kategoria...</option>
-                    {% for cat in categories %}
-                      <option value="{{ cat.id }}">{{ cat.name }}</option>
-                    {% endfor %}
-                  </select>
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-hover table-stack" id="admin-menu-table">
+        <thead>
+          <tr>
+            <th data-i18n="th_menu_col">Menu</th>
+            <th data-i18n="th_cat_col">Kategoria</th>
+            <th class="text-end" data-i18n="th_price_col">Presu</th>
+            <th data-i18n="th_stock_status">Stok</th>
+            <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in menu_items %}
+            <tr class="admin-menu-row" data-cat-id="{{ item.category_id }}" data-search="{{ item.name|lower }} {{ item.sku|default:''|lower }} {{ item.description|default:''|lower }}">
+              <td class="cell-primary">
+                <div class="d-flex align-items-center gap-2-5">
+                  <img src="{{ item.display_image }}" alt="" class="thumb" loading="lazy" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+                  <div class="min-w-0">
+                    <div class="fw-bold truncate">{{ item.name }}{% if item.is_featured %} <i class="fa-solid fa-star fs-8" style="color:var(--warning)" title="Featured" aria-label="Featured"></i>{% endif %}</div>
+                    <div class="fs-8 text-tertiary truncate" style="max-width:320px">{% if item.sku %}<span class="code-text me-1">{{ item.sku }}</span>{% endif %}{{ item.description|default:'' }}</div>
+                  </div>
+                  <span class="price ms-auto d-md-none">${{ item.price }}</span>
                 </div>
-                <div class="col-sm-6">
-                  <label class="form-label small fw-bold text-white" data-i18n="menu_price">Presu (USD $) <span class="text-danger">*</span>:</label>
-                  <div class="input-group">
-                    <span class="input-group-text bg-dark border-secondary border-opacity-50 text-warning fw-bold">$</span>
-                    <input type="number" step="0.01" min="0" class="form-control bg-dark border-secondary border-opacity-50 text-white fw-bold" id="menu-form-price" placeholder="0.00" required>
+              </td>
+              <td data-label="Kategoria" data-i18n-label="th_cat_col"><span class="badge-soft"><i class="fa-solid fa-{{ item.category.icon_name|default:'utensils' }}" aria-hidden="true"></i>{{ item.category.name }}</span></td>
+              <td class="text-end tabular fw-semibold d-none d-md-table-cell">${{ item.price }}</td>
+              <td data-label="Stok" data-i18n-label="th_stock_status">
+                {% if item.availability == 'AVAILABLE' %}
+                  <span class="badge-soft tone-success" data-i18n="stock_available">Iha</span>
+                {% elif item.availability == 'SOLD_OUT' %}
+                  <span class="badge-soft tone-danger" data-i18n="stock_sold_out">Hotu</span>
+                {% else %}
+                  <span class="badge-soft" data-i18n="stock_inactive">La ativu</span>
+                {% endif %}
+              </td>
+              <td class="cell-actions text-end">
+                <div class="d-inline-flex gap-1">
+                  {% if item.availability == 'AVAILABLE' %}
+                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="toggleMenuItem('{{ item.id }}', this)"><span data-i18n="btn_mark_sold_out">Marka hotu</span></button>
+                  {% else %}
+                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="toggleMenuItem('{{ item.id }}', this)"><span data-i18n="btn_mark_available">Marka iha</span></button>
+                  {% endif %}
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditMenuItemModal('{{ item.id }}')" aria-label="Edita" data-i18n-title="btn_edit_menu" title="Edita"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteMenuItem('{{ item.id }}', this.dataset.name)" data-name="{{ item.name }}" aria-label="Hamos" data-i18n-title="btn_delete_menu" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><div class="empty-state-title" data-i18n="no_menu_items">Seidauk iha menu</div></div></td></tr>
+          {% endfor %}
+          <tr id="admin-menu-empty-filtered" hidden><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><div data-i18n="menu_no_results">Menu la hetan</div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Categories -->
+<section class="app-panel" id="categories-panel" aria-labelledby="cat-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="cat-title" data-i18n="categories_title">Kategoria</h1>
+      <p class="page-subtitle">
+        {{ categories|length }} <span data-i18n="categories_total">kategoria</span> &middot;
+        <span id="cat-kpi-active">{{ active_category_count }}</span> <span data-i18n="category_active">ativu</span> &middot;
+        {{ menu_items|length }} <span data-i18n="items_count">menu</span>
+      </p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="openCreateCategoryModal()"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="btn_add_category">Kria kategoria</span></button>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-hover table-stack">
+        <thead>
+          <tr>
+            <th data-i18n="category_name">Kategoria</th>
+            <th data-i18n="category_slug">Slug</th>
+            <th class="text-center" data-i18n="category_sort">Ordem</th>
+            <th class="text-center" data-i18n="category_items_count">Menu</th>
+            <th data-i18n="category_status">Status</th>
+            <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cat in categories %}
+            <tr>
+              <td class="cell-primary">
+                <div class="d-flex align-items-center gap-2-5">
+                  <span class="icon-tile"><i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }}" aria-hidden="true"></i></span>
+                  <div class="min-w-0">
+                    <div class="fw-bold">{{ cat.name }}</div>
+                    {% if cat.description %}<div class="fs-8 text-tertiary clamp-2">{{ cat.description }}</div>{% endif %}
                   </div>
                 </div>
-              </div>
-
-              <div class="row g-2 mb-3">
-                <div class="col-sm-6">
-                  <label class="form-label small fw-bold text-white" data-i18n="menu_sku">Kódigu SKU (Opsionál):</label>
-                  <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="menu-form-sku" placeholder="Ez: MC-01">
+              </td>
+              <td data-label="Slug" data-i18n-label="category_slug"><span class="code-text">{{ cat.slug }}</span></td>
+              <td class="text-center tabular" data-label="Ordem" data-i18n-label="category_sort">{{ cat.sort_order }}</td>
+              <td class="text-center" data-label="Menu" data-i18n-label="category_items_count">
+                <button type="button" class="btn btn-sm btn-ghost" onclick="goToCategoryInMenuPanel('{{ cat.id }}')" title="Haree menu iha kategoria ne'e">{{ cat.item_count|default:0 }} <i class="fa-solid fa-arrow-right fs-8" aria-hidden="true"></i></button>
+              </td>
+              <td data-label="Status" data-i18n-label="category_status">
+                <div class="form-check form-switch m-0">
+                  <input class="form-check-input" type="checkbox" role="switch" id="cat-active-{{ cat.id }}" {% if cat.is_active %}checked{% endif %} onchange="toggleCategoryStatus('{{ cat.id }}', this)">
+                  <label class="form-check-label fs-7" for="cat-active-{{ cat.id }}">{% if cat.is_active %}<span data-i18n="category_active">Ativu</span>{% else %}<span data-i18n="category_inactive">La ativu</span>{% endif %}</label>
                 </div>
-                <div class="col-sm-6">
-                  <label class="form-label small fw-bold text-white" data-i18n="category_sort">Ordem / Sort Order:</label>
-                  <input type="number" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="menu-form-sort" value="0">
+              </td>
+              <td class="cell-actions text-end">
+                <div class="d-inline-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openCreateMenuItemModal('{{ cat.id }}')" aria-label="Aumenta menu" data-i18n-title="btn_add_menu" title="Aumenta menu"><i class="fa-solid fa-plus"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditCategoryModal('{{ cat.id }}')" aria-label="Edita" data-i18n-title="btn_edit_category" title="Edita"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteCategory('{{ cat.id }}', this.dataset.name, {{ cat.item_count|default:0 }})" data-name="{{ cat.name }}" aria-label="Hamos" data-i18n-title="btn_delete_category" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_desc">Deskrisaun / Ingrediente:</label>
-                <textarea class="form-control bg-dark border-secondary border-opacity-50 text-white" id="menu-form-desc" rows="2" placeholder="Ez: Ikan kakap fresku ho molho tamarind tradisionál..."></textarea>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_prep_note">Notasaun ba Dapur (Opsionál):</label>
-                <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="menu-form-prepnote" placeholder="Ez: Tempu tein min 10-15">
-              </div>
-            </div>
-
-            <!-- Right Column: Image, Stock & Attributes -->
-            <div class="col-md-5">
-              <!-- Live Image Preview Box -->
-              <label class="form-label small fw-bold text-white d-block">Preview Foto Menu:</label>
-              <div class="text-center p-2 mb-3 rounded-3 bg-dark bg-opacity-75 border border-secondary border-opacity-50 position-relative overflow-hidden" style="min-height: 140px; display: flex; align-items: center; justify-content: center;">
-                <img id="menu-image-preview" src="/static/icons/default-food.png" class="rounded-3 shadow-sm" style="max-height: 130px; max-width: 100%; object-fit: cover;" onerror="this.src='/static/icons/default-food.png'">
-              </div>
-
-              <!-- Image URL Input -->
-              <div class="mb-2">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_image_url">URL Foto (Link Diretu / Vercel Blob):</label>
-                <input type="url" class="form-control bg-dark border-secondary border-opacity-50 text-white form-control-sm" id="menu-form-imgurl" placeholder="https://..." oninput="updateMenuImagePreview(this.value)">
-              </div>
-
-              <!-- Image File Upload -->
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_image_file">Ka Upload Ficheiro Foto:</label>
-                <input type="file" class="form-control bg-dark border-secondary border-opacity-50 text-white form-control-sm" id="menu-form-imgfile" accept="image/*" onchange="handleMenuFileSelect(event)">
-              </div>
-
-              <!-- Stock Availability -->
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-white" data-i18n="menu_availability">Disponibilidade Stok:</label>
-                <select class="form-select bg-dark border-secondary border-opacity-50 text-white form-select-sm" id="menu-form-availability">
-                  <option value="AVAILABLE" selected>Iha (Available)</option>
-                  <option value="SOLD_OUT">Hotu (Sold Out)</option>
-                  <option value="INACTIVE">La-Ativu (Inactive)</option>
-                </select>
-              </div>
-
-              <!-- Featured Checkbox -->
-              <div class="form-check form-switch mt-2">
-                <input class="form-check-input" type="checkbox" id="menu-form-featured">
-                <label class="form-check-label text-white small fw-bold" for="menu-form-featured" data-i18n="menu_featured">
-                  ★ Menu Destaque (Featured)
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Form Action Buttons -->
-          <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top border-secondary border-opacity-25">
-            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 text-white-50" data-bs-dismiss="modal" data-i18n="cancel">Kansela</button>
-            <button type="submit" class="btn btn-warning rounded-pill px-4 fw-bold text-dark shadow-sm" id="btn-save-menu">
-              <i class="fa-solid fa-check me-1"></i> <span data-i18n="save">Rai Menu</span>
-            </button>
-          </div>
-        </form>
-      </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><div class="empty-state-title" data-i18n="no_categories">Seidauk iha kategoria</div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
-</div>
+</section>
 
-<!-- Create / Edit Category Modal -->
-<div class="modal fade" id="categoryModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content glass-card border-warning border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
-          <i class="fa-solid fa-layer-group text-warning"></i>
-          <span id="cat-modal-title">Kria Kategoria Foun</span>
-        </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        <form id="category-form" onsubmit="event.preventDefault(); submitCategoryForm();">
-          <input type="hidden" id="category-id" value="">
+<!-- Tables & QR -->
+<section class="app-panel" id="tables-panel" aria-labelledby="tables-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="tables-title" data-i18n="tables_qr_title">Meza no QR</h1>
+      <p class="page-subtitle" data-i18n="tables_qr_desc">Troka QR se karik QR tuan lakon ka kopia ona.</p>
+    </div>
+    <a href="{% url 'admin-qr-sheet' %}" target="_blank" rel="noopener" class="btn btn-secondary-app"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="btn_print_qr_sheet">Imprime QR</span></a>
+  </div>
 
-          <div class="mb-3">
-            <label class="form-label small fw-bold text-white" data-i18n="category_name">Naran Kategoria <span class="text-danger">*</span>:</label>
-            <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="cat-form-name" placeholder="Ez: Pratus Prinsipál, Bar Drinks..." required oninput="autoSlugCategory(this.value)">
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label small fw-bold text-white" data-i18n="category_slug">Slug / Kódigu URL (Opsionál):</label>
-            <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="cat-form-slug" placeholder="Ez: main-courses">
-            <small class="text-white-50" style="font-size: 0.72rem;">Se mamuk, sistema sei halo automatiku husi naran.</small>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label small fw-bold text-white" data-i18n="category_icon">Ikone FontAwesome:</label>
-            <div class="input-group mb-2">
-              <span class="input-group-text bg-dark border-secondary border-opacity-50 text-warning" id="cat-icon-preview">
-                <i class="fa-solid fa-utensils"></i>
-              </span>
-              <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="cat-form-icon" value="utensils" placeholder="Ez: bowl-food, fish, martini-glass-citrus" oninput="updateCatIconPreview(this.value)">
-            </div>
-            
-            <!-- Quick Icon Preset Selector -->
-            <small class="text-white-50 d-block mb-1" style="font-size: 0.72rem;">Klik ikone lais:</small>
-            <div class="d-flex flex-wrap gap-1">
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('bowl-food')"><i class="fa-solid fa-bowl-food me-1 text-warning"></i>Pratus</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('fish')"><i class="fa-solid fa-fish me-1 text-info"></i>Seafood</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('martini-glass-citrus')"><i class="fa-solid fa-martini-glass-citrus me-1 text-danger"></i>Bar</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('mug-hot')"><i class="fa-solid fa-mug-hot me-1 text-warning"></i>Kafé/Sopa</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('ice-cream')"><i class="fa-solid fa-ice-cream me-1 text-success"></i>Sobremesa</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 text-white-50" onclick="selectCatIconPreset('utensils')"><i class="fa-solid fa-utensils me-1 text-light"></i>Seluk</button>
-            </div>
-          </div>
-
-          <div class="row g-2 mb-3">
-            <div class="col-6">
-              <label class="form-label small fw-bold text-white" data-i18n="category_sort">Ordem / Posisaun:</label>
-              <input type="number" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="cat-form-sort" value="0">
-            </div>
-            <div class="col-6 d-flex align-items-center">
-              <div class="form-check form-switch mt-3">
-                <input class="form-check-input" type="checkbox" id="cat-form-active" checked>
-                <label class="form-check-label text-white small fw-bold" for="cat-form-active" data-i18n="category_active">
-                  Ativu
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label small fw-bold text-white" data-i18n="menu_desc">Deskrisaun:</label>
-            <textarea class="form-control bg-dark border-secondary border-opacity-50 text-white" id="cat-form-desc" rows="2" placeholder="Deskrisaun badak kona-ba kategoria..."></textarea>
-          </div>
-
-          <!-- Modal Action Buttons -->
-          <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top border-secondary border-opacity-25">
-            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 text-white-50" data-bs-dismiss="modal" data-i18n="cancel">Kansela</button>
-            <button type="submit" class="btn btn-warning rounded-pill px-4 fw-bold text-dark shadow-sm" id="btn-save-cat">
-              <i class="fa-solid fa-check me-1"></i> <span data-i18n="save">Rai Kategoria</span>
-            </button>
-          </div>
-        </form>
-      </div>
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-hover table-stack">
+        <thead>
+          <tr>
+            <th data-i18n="th_table_name">Meza</th>
+            <th data-i18n="th_capacity">Kapasidade</th>
+            <th data-i18n="th_current_status">Status</th>
+            <th data-i18n="th_qr_token">QR token</th>
+            <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tbl in tables %}
+            <tr>
+              <td class="cell-primary"><div class="fw-bold">{{ tbl.display_name }}</div><div class="fs-8 text-tertiary">{{ tbl.table_code }}</div></td>
+              <td data-label="Kapasidade" data-i18n-label="th_capacity" class="tabular">{{ tbl.capacity|default:"-" }}</td>
+              <td data-label="Status" data-i18n-label="th_current_status"><span class="status status-{{ tbl.status|lower }}">{{ tbl.get_status_display }}</span></td>
+              <td data-label="QR" data-i18n-label="th_qr_token"><span class="code-text">{{ tbl.qr_token|slice:":12" }}…</span></td>
+              <td class="cell-actions text-end">
+                <div class="d-inline-flex gap-1">
+                  <a class="btn btn-sm btn-ghost btn-icon" href="/t/{{ tbl.qr_token }}/" target="_blank" rel="noopener" aria-label="Loke menu meza" title="Loke menu meza"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                  <button type="button" class="btn btn-sm btn-secondary-app" onclick="rotateTableQR('{{ tbl.id }}', this.dataset.name)" data-name="{{ tbl.display_name }}"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span data-i18n="btn_rotate_qr">Troka QR</span></button>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-chair" aria-hidden="true"></i><div data-i18n="no_tables_found">Seidauk iha meza</div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
-</div>
+</section>
 
-<!-- Generic Safe Delete Confirmation Modal -->
-<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content glass-card border-danger border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h6 class="modal-title fw-bold text-danger d-flex align-items-center gap-2">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-          <span data-i18n="confirm_delete_title">Konfirmasaun Hamos</span>
-        </h6>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-3 text-center">
-        <p class="text-white-50 small mb-2" id="delete-confirm-message">Ita-boot iha serteza hakarak hamos elementu ne'e?</p>
-        <strong class="text-white d-block mb-3 fs-6" id="delete-confirm-target"></strong>
-        <div class="d-flex justify-content-center gap-2">
-          <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" data-bs-dismiss="modal" data-i18n="cancel">Kansela</button>
-          <button type="button" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold" id="btn-confirm-delete-execute">
-            <i class="fa-solid fa-trash-can me-1"></i> <span data-i18n="delete">Hamos</span>
-          </button>
-        </div>
-      </div>
+<!-- Staff -->
+<section class="app-panel" id="users-panel" aria-labelledby="users-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="users-title" data-i18n="staff_mgmt_title">Staff</h1>
+      <p class="page-subtitle" data-i18n="staff_mgmt_alert">Staff ida-idak haree de'it portal tuir sira-nia papél.</p>
+    </div>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span data-i18n="btn_create_user">Kria staff</span></button>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-stack">
+        <thead><tr><th data-i18n="label_username">Uzuáriu</th><th data-i18n="label_role">Papél</th><th data-i18n="status">Status</th><th data-i18n="joined">Kria iha</th></tr></thead>
+        <tbody>
+          {% for staff in staff_users %}
+            <tr>
+              <td class="cell-primary"><div class="fw-bold">{{ staff.get_full_name }}</div><div class="fs-8 text-tertiary">@{{ staff.username }}</div></td>
+              <td data-label="Papél" data-i18n-label="label_role"><span class="badge-soft {% if staff.is_superuser or staff.role == 'ADMIN' %}tone-accent{% elif staff.role == 'CASHIER' %}tone-success{% else %}tone-info{% endif %}">{{ staff.get_role_display }}</span></td>
+              <td data-label="Status" data-i18n-label="status">{% if staff.is_active %}<span class="badge-soft tone-success" data-i18n="category_active">Ativu</span>{% else %}<span class="badge-soft" data-i18n="category_inactive">La ativu</span>{% endif %}</td>
+              <td data-label="Kria iha" data-i18n-label="joined" class="tabular fs-7">{{ staff.created_at|date:"d/m/Y" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
-</div>
+</section>
 
-<!-- Create Staff User Modal -->
-<div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content glass-card border-warning border-opacity-50">
-      <div class="modal-header border-bottom border-secondary border-opacity-25 text-white">
-        <h5 class="modal-title fw-bold text-white"><i class="fa-solid fa-user-plus text-warning me-2"></i> <span data-i18n="modal_create_staff_title">Kria Konta Staff Foun</span></h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-white" data-i18n="label_fullname">Naran Kompletu / Primeiro Naran:</label>
-          <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="new-user-fullname" placeholder="Ez: Gilberto Soares">
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-white" data-i18n="label_username">Naran-Uzuáriu (Username):</label>
-          <input type="text" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="new-user-username" placeholder="Ez: kaixa01">
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-white" data-i18n="label_password">Liafuan Xave (Password):</label>
-          <input type="password" class="form-control bg-dark border-secondary border-opacity-50 text-white" id="new-user-password" placeholder="Minimu 6 karaktér">
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-white" data-i18n="label_role">Papél / Funsaun (Role):</label>
-          <select class="form-select bg-dark border-secondary border-opacity-50 text-white" id="new-user-role">
-            <option value="CASHIER" selected data-i18n="role_cashier">💵 Kaixa (Cashier)</option>
-            <option value="KITCHEN" data-i18n="role_kitchen">🍳 Dapur (Kitchen KDS)</option>
-            <option value="ADMIN" data-i18n="role_admin">👑 Jerente / Admin</option>
-          </select>
-        </div>
-        <button type="button" class="btn btn-warning w-100 fw-bold rounded-pill text-dark shadow py-2" onclick="submitCreateStaffUser()">
-          <i class="fa-solid fa-check-circle me-1"></i> <span data-i18n="btn_create_account_now">Kria Konta Agora</span>
-        </button>
-      </div>
+<!-- Audit -->
+<section class="app-panel" id="audit-panel" aria-labelledby="audit-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="audit-title" data-i18n="audit_title">Auditoria</h1>
+      <p class="page-subtitle" data-i18n="audit_desc">Eventu 50 ikus liu.</p>
     </div>
   </div>
-</div>
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-stack fs-7">
+        <thead><tr><th data-i18n="th_action_col">Asaun</th><th data-i18n="th_time">Oras</th><th data-i18n="th_actor">Atór</th><th data-i18n="th_entity">Entidade</th><th data-i18n="th_snapshot">Detallu</th></tr></thead>
+        <tbody>
+          {% for event in audit_events %}
+            <tr>
+              <td class="cell-primary"><span class="badge-soft tone-accent">{{ event.action }}</span></td>
+              <td data-label="Oras" data-i18n-label="th_time" class="tabular text-tertiary">{{ event.created_at|date:"d/m H:i:s" }}</td>
+              <td data-label="Atór" data-i18n-label="th_actor"><strong>{{ event.actor_user.username|default:"SYSTEM" }}</strong> <span class="text-tertiary">{{ event.actor_role }}</span></td>
+              <td data-label="Entidade" data-i18n-label="th_entity">{{ event.entity_type }} <span class="code-text">{{ event.entity_id|slice:":8" }}</span></td>
+              <td data-label="Detallu" data-i18n-label="th_snapshot"><span class="code-text d-inline-block text-start" style="max-width:340px">{{ event.after_data|default:"-"|truncatechars:160 }}</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><div data-i18n="no_audit_logs">Seidauk iha rejistu.</div></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 {% endblock %}
 
-{% block extra_css %}
-<style>
-  body.admin-dark-body {
-    background: #070b14;
-    color: #f8fafc;
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  }
-  .glass-card {
-    background: rgba(14, 18, 30, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 1.25rem;
-    color: #ffffff;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
-  }
-  .modal-content.glass-card {
-    background: rgba(11, 15, 26, 0.98);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
-  }
-  .admin-menu-row:hover, .admin-cat-row:hover {
-    background-color: rgba(249, 115, 22, 0.06) !important;
-  }
-  .admin-cat-pill.active {
-    background: #f97316 !important;
-    border-color: #f97316 !important;
-    color: #000000 !important;
-    font-weight: 700 !important;
-    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
-  }
-  .admin-cat-pill:hover:not(.active) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff !important;
-  }
-</style>
+{% block overlays %}
+<!-- Menu item form -->
+<div class="modal fade" id="menuItemModal" tabindex="-1" aria-labelledby="menu-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+    <form class="modal-content" id="menu-item-form" onsubmit="event.preventDefault(); submitMenuItemForm();" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="menu-modal-title">Menu</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="menu-item-id" value="">
+        <div class="row g-3">
+          <div class="col-md-7">
+            <div class="mb-3">
+              <label class="form-label" for="menu-form-name"><span data-i18n="menu_name">Naran menu</span> *</label>
+              <input type="text" class="form-control" id="menu-form-name" required maxlength="150">
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-sm-6">
+                <label class="form-label" for="menu-form-category"><span data-i18n="menu_category">Kategoria</span> *</label>
+                <select class="form-select" id="menu-form-category" required>
+                  <option value="" disabled selected data-i18n="select_category">Hili kategoria</option>
+                  {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="menu-form-price"><span data-i18n="menu_price">Presu (USD)</span> *</label>
+                <div class="input-group">
+                  <span class="input-group-text">$</span>
+                  <input type="number" inputmode="decimal" step="0.01" min="0" class="form-control tabular" id="menu-form-price" required>
+                </div>
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-sm-6">
+                <label class="form-label" for="menu-form-sku" data-i18n="menu_sku">SKU</label>
+                <input type="text" class="form-control" id="menu-form-sku" maxlength="40">
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="menu-form-sort" data-i18n="category_sort">Ordem</label>
+                <input type="number" class="form-control" id="menu-form-sort" value="0">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="menu-form-desc" data-i18n="menu_desc">Deskrisaun</label>
+              <textarea class="form-control" id="menu-form-desc" rows="2"></textarea>
+            </div>
+            <div>
+              <label class="form-label" for="menu-form-prepnote" data-i18n="menu_prep_note">Nota ba dapur</label>
+              <input type="text" class="form-control" id="menu-form-prepnote">
+            </div>
+          </div>
+          <div class="col-md-5">
+            <div class="form-label" data-i18n="menu_photo">Foto</div>
+            <div class="surface-muted mb-2 overflow-hidden" style="aspect-ratio:4/3">
+              <img id="menu-image-preview" src="{% static 'icons/default-food.png' %}" alt="" class="w-100 h-100" style="object-fit:cover" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+            </div>
+            <label class="form-label" for="menu-form-imgfile" data-i18n="menu_image_file">Upload foto</label>
+            <input type="file" class="form-control form-control-sm mb-2" id="menu-form-imgfile" accept="image/*" onchange="handleMenuFileSelect(event)">
+            <label class="form-label" for="menu-form-imgurl" data-i18n="menu_image_url">Ka URL foto</label>
+            <input type="url" class="form-control form-control-sm mb-3" id="menu-form-imgurl" placeholder="https://" oninput="updateMenuImagePreview(this.value)">
+            <label class="form-label" for="menu-form-availability" data-i18n="menu_availability">Disponibilidade</label>
+            <select class="form-select mb-3" id="menu-form-availability">
+              <option value="AVAILABLE" data-i18n="stock_available">Iha</option>
+              <option value="SOLD_OUT" data-i18n="stock_sold_out">Hotu</option>
+              <option value="INACTIVE" data-i18n="stock_inactive">La ativu</option>
+            </select>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" id="menu-form-featured">
+              <label class="form-check-label" for="menu-form-featured" data-i18n="menu_featured">Menu rekomendadu</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-save-menu"><span data-i18n="save">Rai</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Category form -->
+<div class="modal fade modal-sheet" id="categoryModal" tabindex="-1" aria-labelledby="cat-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <form class="modal-content" id="category-form" onsubmit="event.preventDefault(); submitCategoryForm();" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="cat-modal-title">Kategoria</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="category-id" value="">
+        <div class="mb-3">
+          <label class="form-label" for="cat-form-name"><span data-i18n="category_name">Naran kategoria</span> *</label>
+          <input type="text" class="form-control" id="cat-form-name" required maxlength="100" oninput="autoSlugCategory(this.value)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="cat-form-slug" data-i18n="category_slug">Slug</label>
+          <input type="text" class="form-control" id="cat-form-slug" pattern="[a-z0-9-]+">
+          <div class="form-text" data-i18n="category_slug_hint">Se mamuk, sistema kria husi naran.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="cat-form-icon" data-i18n="category_icon">Ikone</label>
+          <div class="input-group mb-2">
+            <span class="input-group-text" id="cat-icon-preview"><i class="fa-solid fa-utensils"></i></span>
+            <input type="text" class="form-control" id="cat-form-icon" value="utensils" oninput="updateCatIconPreview(this.value)">
+          </div>
+          <div class="icon-preset-row">
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('bowl-food')" aria-label="bowl-food"><i class="fa-solid fa-bowl-food"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('fish')" aria-label="fish"><i class="fa-solid fa-fish"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('martini-glass-citrus')" aria-label="bar"><i class="fa-solid fa-martini-glass-citrus"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('mug-hot')" aria-label="mug-hot"><i class="fa-solid fa-mug-hot"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('ice-cream')" aria-label="ice-cream"><i class="fa-solid fa-ice-cream"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('burger')" aria-label="burger"><i class="fa-solid fa-burger"></i></button>
+            <button type="button" class="btn btn-sm btn-secondary-app btn-icon" onclick="selectCatIconPreset('utensils')" aria-label="utensils"><i class="fa-solid fa-utensils"></i></button>
+          </div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label" for="cat-form-sort" data-i18n="category_sort">Ordem</label>
+            <input type="number" class="form-control" id="cat-form-sort" value="0">
+          </div>
+          <div class="col-6 d-flex align-items-end">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="cat-form-active" checked>
+              <label class="form-check-label" for="cat-form-active" data-i18n="category_active">Ativu</label>
+            </div>
+          </div>
+        </div>
+        <label class="form-label" for="cat-form-desc" data-i18n="menu_desc">Deskrisaun</label>
+        <textarea class="form-control" id="cat-form-desc" rows="2"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-save-cat"><span data-i18n="save">Rai</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Create staff -->
+<div class="modal fade modal-sheet" id="createUserModal" tabindex="-1" aria-labelledby="create-user-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" onsubmit="event.preventDefault(); submitCreateStaffUser();" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="create-user-title" data-i18n="modal_create_staff_title">Kria konta staff</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="new-user-fullname" data-i18n="label_fullname">Naran kompletu</label>
+          <input type="text" class="form-control" id="new-user-fullname" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="new-user-username"><span data-i18n="label_username">Naran-uzuáriu</span> *</label>
+          <input type="text" class="form-control" id="new-user-username" required autocomplete="off" autocapitalize="none">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="new-user-password"><span data-i18n="label_password">Liafuan xave</span> *</label>
+          <input type="password" class="form-control" id="new-user-password" required minlength="8" autocomplete="new-password">
+          <div class="form-text" data-i18n="password_hint">Mínimu karakter 8, la bele komún liu.</div>
+        </div>
+        <label class="form-label" for="new-user-role" data-i18n="label_role">Papél</label>
+        <select class="form-select" id="new-user-role">
+          <option value="CASHIER" selected data-i18n="role_cashier">Kaixa</option>
+          <option value="KITCHEN" data-i18n="role_kitchen">Dapur</option>
+          <option value="ADMIN" data-i18n="role_admin">Admin</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-create-user"><span data-i18n="btn_create_account_now">Kria konta</span></button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script>
-  let currentActiveMenuCat = 'all';
-
-  // --------------------------------------------------------------------------
-  // Menu Filtering & Search
-  // --------------------------------------------------------------------------
-  function filterAdminMenuByCategory(catId, btnEl) {
-    currentActiveMenuCat = String(catId || 'all').trim();
-    sessionStorage.setItem('celvass_admin_active_cat', currentActiveMenuCat);
-
-    // Update pill buttons state
-    document.querySelectorAll('.admin-cat-pill').forEach(b => {
-      const bCat = String(b.getAttribute('data-cat') || b.dataset.cat || '').trim();
-      if (bCat === currentActiveMenuCat) {
-        b.classList.remove('btn-outline-light', 'text-white-50');
-        b.classList.add('btn-warning', 'text-dark', 'active', 'fw-bold');
-      } else {
-        b.classList.remove('btn-warning', 'text-dark', 'active', 'fw-bold');
-        b.classList.add('btn-outline-light', 'text-white-50');
-      }
-    });
-
-    // Update indicator bar
-    const indicator = document.getElementById('active-cat-indicator-bar');
-    const nameDisplay = document.getElementById('active-cat-name-display');
-
-    if (currentActiveMenuCat !== 'all') {
-      const activeBtn = document.querySelector(`.admin-cat-pill[data-cat="${currentActiveMenuCat}"]`);
-      const catName = activeBtn ? (activeBtn.getAttribute('data-cat-name') || activeBtn.innerText.trim()) : 'Kategoria Hili';
-      if (indicator) indicator.style.setProperty('display', 'flex', 'important');
-      if (nameDisplay) nameDisplay.textContent = catName;
-    } else {
-      if (indicator) indicator.style.setProperty('display', 'none', 'important');
-    }
-
-    filterAdminMenuItems();
-  }
-
-  function filterAdminMenuItems() {
-    const query = (document.getElementById('admin-menu-search')?.value || '').toLowerCase().trim();
-    const rows = document.querySelectorAll('.admin-menu-row');
-    let visibleCount = 0;
-
-    rows.forEach(row => {
-      const rowCatId = String(row.getAttribute('data-cat-id') || row.dataset.catId || '').trim();
-      const rowName = (row.dataset.name || '').toLowerCase();
-      const rowSku = (row.dataset.sku || '').toLowerCase();
-      const rowDesc = (row.dataset.desc || '').toLowerCase();
-
-      const matchCat = (currentActiveMenuCat === 'all' || rowCatId === currentActiveMenuCat);
-      const matchQuery = (!query || rowName.includes(query) || rowSku.includes(query) || rowDesc.includes(query));
-
-      if (matchCat && matchQuery) {
-        row.style.display = '';
-        visibleCount++;
-      } else {
-        row.style.display = 'none';
-      }
-    });
-
-    // Update active count display
-    const countDisplay = document.getElementById('active-cat-count-display');
-    if (countDisplay) {
-      countDisplay.textContent = `${visibleCount} Itens`;
-    }
-
-    // Dynamic empty row
-    let emptyRow = document.getElementById('admin-menu-empty-filtered');
-    if (!emptyRow) {
-      emptyRow = document.createElement('tr');
-      emptyRow.id = 'admin-menu-empty-filtered';
-      emptyRow.innerHTML = `
-        <td colspan="5" class="text-center py-5 text-white-50">
-          <i class="fa-solid fa-utensils fa-2x mb-2 text-warning opacity-50 d-block"></i>
-          <span class="fs-6 d-block text-white mb-1">Seidauk iha menu ne'ebé asigna ba kategoria ne'e.</span>
-          <small class="text-white-50 d-block mb-3">Klik butaun kraik atu aumenta menu foun ba kategoria ne'e.</small>
-          <button class="btn btn-sm btn-warning text-dark rounded-pill px-3 py-1.5 fw-bold shadow-sm" onclick="openCreateMenuItemModal(currentActiveMenuCat)">
-            <i class="fa-solid fa-plus me-1"></i> Aumenta Menu ba Kategoria Ne'e
-          </button>
-        </td>
-      `;
-      document.querySelector('#admin-menu-table tbody')?.appendChild(emptyRow);
-    }
-    emptyRow.style.display = (visibleCount === 0) ? '' : 'none';
-  }
-
-  // --------------------------------------------------------------------------
-  // Category Menu Accordion & Quick Jump Handlers
-  // --------------------------------------------------------------------------
-  function toggleCategoryMenuAccordion(catId) {
-    const subrow = document.getElementById(`cat-menu-subrow-${catId}`);
-    const chevron = document.getElementById(`cat-chevron-${catId}`);
-    if (!subrow) return;
-
-    if (subrow.style.display === 'none' || !subrow.style.display) {
-      subrow.style.display = 'table-row';
-      if (chevron) chevron.style.transform = 'rotate(180deg)';
-    } else {
-      subrow.style.display = 'none';
-      if (chevron) chevron.style.transform = 'rotate(0deg)';
-    }
-  }
-
-  function goToCategoryInMenuPanel(catId) {
-    // 1. Activate dock item
-    const dockButtons = document.querySelectorAll('.dock-item-btn[data-dock-tab]');
-    dockButtons.forEach(b => b.classList.remove('active'));
-    const menuTabBtn = document.querySelector('.dock-item-btn[data-dock-tab="#menu-panel"]');
-    if (menuTabBtn) menuTabBtn.classList.add('active');
-
-    // 2. Activate tab pane directly
-    document.querySelectorAll('#adminTabContent .tab-pane').forEach(p => p.classList.remove('show', 'active'));
-    const menuPane = document.getElementById('menu-panel');
-    if (menuPane) {
-      menuPane.classList.add('show', 'active');
-    }
-
-    // 3. Select category pill & apply filter
-    const pill = document.querySelector(`.admin-cat-pill[data-cat="${catId}"]`);
-    if (pill) {
-      filterAdminMenuByCategory(catId, pill);
-    } else {
-      filterAdminMenuByCategory(catId);
-    }
-
-    // 4. Scroll smoothly into view
-    setTimeout(() => {
-      const indicator = document.getElementById('active-cat-indicator-bar');
-      if (indicator && indicator.style.display !== 'none') {
-        indicator.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (pill) {
-        pill.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 80);
-  }
-
-  // --------------------------------------------------------------------------
-  // Menu Item Modal & Form Handlers
-  // --------------------------------------------------------------------------
-  function openCreateMenuItemModal(preselectedCatId) {
-    document.getElementById('menu-modal-title').textContent = t('btn_add_menu') || 'Aumenta Menu Foun';
-    document.getElementById('menu-item-id').value = '';
-    document.getElementById('menu-form-name').value = '';
-
-    const catSelect = document.getElementById('menu-form-category');
-    const targetCat = preselectedCatId || (currentActiveMenuCat !== 'all' ? currentActiveMenuCat : null);
-    if (targetCat && targetCat !== 'all') {
-      catSelect.value = targetCat;
-    } else {
-      catSelect.selectedIndex = 0;
-    }
-
-    document.getElementById('menu-form-price').value = '';
-    document.getElementById('menu-form-sku').value = '';
-    document.getElementById('menu-form-sort').value = '0';
-    document.getElementById('menu-form-desc').value = '';
-    document.getElementById('menu-form-prepnote').value = '';
-    document.getElementById('menu-form-imgurl').value = '';
-    document.getElementById('menu-form-imgfile').value = '';
-    document.getElementById('menu-form-availability').value = 'AVAILABLE';
-    document.getElementById('menu-form-featured').checked = false;
-    document.getElementById('menu-image-preview').src = '/static/icons/default-food.png';
-
-    const modal = new bootstrap.Modal(document.getElementById('menuItemModal'));
-    modal.show();
-  }
-
-  // Auto-restore selected category filter on load
-  document.addEventListener('DOMContentLoaded', () => {
-    const savedCat = sessionStorage.getItem('celvass_admin_active_cat');
-    if (savedCat && savedCat !== 'all') {
-      const pill = document.querySelector(`.admin-cat-pill[data-cat="${savedCat}"]`);
-      if (pill) {
-        filterAdminMenuByCategory(savedCat, pill);
-      }
-    }
-  });
-
-  async function openEditMenuItemModal(itemId) {
-    try {
-      const item = await apiGet(`/api/v1/admin/menu-items/${itemId}/`);
-      document.getElementById('menu-modal-title').textContent = `${t('btn_edit_menu') || 'Edita Menu'}: ${item.name}`;
-      document.getElementById('menu-item-id').value = item.id;
-      document.getElementById('menu-form-name').value = item.name;
-      document.getElementById('menu-form-category').value = item.category_id;
-      document.getElementById('menu-form-price').value = item.price;
-      document.getElementById('menu-form-sku').value = item.sku || '';
-      document.getElementById('menu-form-sort').value = item.sort_order || 0;
-      document.getElementById('menu-form-desc').value = item.description || '';
-      document.getElementById('menu-form-prepnote').value = item.preparation_note || '';
-      document.getElementById('menu-form-imgurl').value = item.image_url || '';
-      document.getElementById('menu-form-imgfile').value = '';
-      document.getElementById('menu-form-availability').value = item.availability || 'AVAILABLE';
-      document.getElementById('menu-form-featured').checked = Boolean(item.is_featured);
-      document.getElementById('menu-image-preview').src = item.display_image || '/static/icons/default-food.png';
-
-      const modal = new bootstrap.Modal(document.getElementById('menuItemModal'));
-      modal.show();
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
-  }
-
-  function updateMenuImagePreview(url) {
-    const preview = document.getElementById('menu-image-preview');
-    if (url && url.trim()) {
-      preview.src = url.trim();
-    } else {
-      preview.src = '/static/icons/default-food.png';
-    }
-  }
-
-  function handleMenuFileSelect(event) {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        document.getElementById('menu-image-preview').src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
-  async function submitMenuItemForm() {
-    const itemId = document.getElementById('menu-item-id').value;
-    const name = document.getElementById('menu-form-name').value.trim();
-    const categoryId = document.getElementById('menu-form-category').value;
-    const price = document.getElementById('menu-form-price').value;
-    const sku = document.getElementById('menu-form-sku').value.trim();
-    const sortOrder = document.getElementById('menu-form-sort').value;
-    const desc = document.getElementById('menu-form-desc').value.trim();
-    const prepNote = document.getElementById('menu-form-prepnote').value.trim();
-    const imgUrl = document.getElementById('menu-form-imgurl').value.trim();
-    const availability = document.getElementById('menu-form-availability').value;
-    const isFeatured = document.getElementById('menu-form-featured').checked;
-    const fileInput = document.getElementById('menu-form-imgfile');
-
-    if (!name || !categoryId || !price) {
-      showToast('Favór preenxe Naran, Kategoria no Presu!', 'warning');
-      return;
-    }
-
-    const btnSave = document.getElementById('btn-save-menu');
-    btnSave.disabled = true;
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Prosesa...';
-
-    try {
-      // Use FormData to support image file uploads seamlessly
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('category_id', categoryId);
-      formData.append('price', price);
-      formData.append('sku', sku);
-      formData.append('sort_order', sortOrder);
-      formData.append('description', desc);
-      formData.append('preparation_note', prepNote);
-      formData.append('image_url', imgUrl);
-      formData.append('availability', availability);
-      formData.append('is_featured', isFeatured);
-
-      if (fileInput.files.length > 0) {
-        formData.append('image', fileInput.files[0]);
-      }
-
-      const url = itemId ? `/api/v1/admin/menu-items/${itemId}/` : '/api/v1/admin/menu-items/';
-      const method = itemId ? 'PATCH' : 'POST';
-
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: formData
-      });
-
-      const res = await response.json();
-      if (!response.ok || res.success === false) {
-        throw new Error(res.error?.message || 'Falla atu salva menu.');
-      }
-
-      showToast(itemId ? (t('menu_updated_success') || 'Menu atualizadu ho susesu!') : (t('menu_created_success') || 'Menu foun aumenta ho susesu!'), 'success');
-      SoundEffects.playSuccess();
-      bootstrap.Modal.getInstance(document.getElementById('menuItemModal')).hide();
-      setTimeout(() => window.location.reload(), 700);
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    } finally {
-      btnSave.disabled = false;
-      btnSave.innerHTML = `<i class="fa-solid fa-check me-1"></i> ${t('save') || 'Rai Menu'}`;
-    }
-  }
-
-  function confirmDeleteMenuItem(itemId, itemName) {
-    document.getElementById('delete-confirm-message').textContent = t('confirm_delete_menu_msg') || 'Ita-boot iha serteza hakarak hamos menu ne\'e?';
-    document.getElementById('delete-confirm-target').textContent = itemName;
-
-    const btnExec = document.getElementById('btn-confirm-delete-execute');
-    btnExec.onclick = async () => {
-      btnExec.disabled = true;
-      btnExec.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-      try {
-        await apiRequest(`/api/v1/admin/menu-items/${itemId}/`, { method: 'DELETE' });
-        showToast(t('menu_deleted_success') || 'Menu hamos ho susesu!', 'success');
-        SoundEffects.playSuccess();
-        bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
-        setTimeout(() => window.location.reload(), 600);
-      } catch (e) {
-        showToast(e.message, 'error');
-        SoundEffects.playError();
-      } finally {
-        btnExec.disabled = false;
-        btnExec.innerHTML = `<i class="fa-solid fa-trash-can me-1"></i> ${t('delete') || 'Hamos'}`;
-      }
-    };
-
-    const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-    modal.show();
-  }
-
-  async function toggleMenuItem(itemId) {
-    try {
-      await apiPost(`/api/v1/admin/menu-items/${itemId}/toggle-availability/`);
-      showToast('Disponibilidade menu nian atualizadu!', 'success');
-      SoundEffects.playSuccess();
-      setTimeout(() => window.location.reload(), 600);
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // Category Modal & Form Handlers
-  // --------------------------------------------------------------------------
-  function openCreateCategoryModal() {
-    document.getElementById('cat-modal-title').textContent = t('btn_add_category') || 'Kria Kategoria Foun';
-    document.getElementById('category-id').value = '';
-    document.getElementById('cat-form-name').value = '';
-    document.getElementById('cat-form-slug').value = '';
-    document.getElementById('cat-form-icon').value = 'utensils';
-    document.getElementById('cat-form-sort').value = '0';
-    document.getElementById('cat-form-active').checked = true;
-    document.getElementById('cat-form-desc').value = '';
-    updateCatIconPreview('utensils');
-
-    const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
-    modal.show();
-  }
-
-  async function openEditCategoryModal(catId) {
-    try {
-      const cat = await apiGet(`/api/v1/admin/categories/${catId}/`);
-      document.getElementById('cat-modal-title').textContent = `${t('btn_edit_category') || 'Edita Kategoria'}: ${cat.name}`;
-      document.getElementById('category-id').value = cat.id;
-      document.getElementById('cat-form-name').value = cat.name;
-      document.getElementById('cat-form-slug').value = cat.slug;
-      document.getElementById('cat-form-icon').value = cat.icon_name || 'utensils';
-      document.getElementById('cat-form-sort').value = cat.sort_order || 0;
-      document.getElementById('cat-form-active').checked = Boolean(cat.is_active);
-      document.getElementById('cat-form-desc').value = cat.description || '';
-      updateCatIconPreview(cat.icon_name || 'utensils');
-
-      const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
-      modal.show();
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
-  }
-
-  function autoSlugCategory(val) {
-    const slugInput = document.getElementById('cat-form-slug');
-    if (slugInput && !document.getElementById('category-id').value) {
-      slugInput.value = val.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/[\s_-]+/g, '-');
-    }
-  }
-
-  function updateCatIconPreview(icon) {
-    const preview = document.getElementById('cat-icon-preview');
-    if (preview) {
-      preview.innerHTML = `<i class="fa-solid fa-${icon || 'utensils'}"></i>`;
-    }
-  }
-
-  function selectCatIconPreset(icon) {
-    document.getElementById('cat-form-icon').value = icon;
-    updateCatIconPreview(icon);
-  }
-
-  async function submitCategoryForm() {
-    const catId = document.getElementById('category-id').value;
-    const name = document.getElementById('cat-form-name').value.trim();
-    const slug = document.getElementById('cat-form-slug').value.trim();
-    const iconName = document.getElementById('cat-form-icon').value.trim();
-    const sortOrder = document.getElementById('cat-form-sort').value;
-    const isActive = document.getElementById('cat-form-active').checked;
-    const desc = document.getElementById('cat-form-desc').value.trim();
-
-    if (!name) {
-      showToast('Naran kategoria obrigatóriu!', 'warning');
-      return;
-    }
-
-    const btnSave = document.getElementById('btn-save-cat');
-    btnSave.disabled = true;
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Prosesa...';
-
-    try {
-      const payload = {
-        name,
-        slug,
-        icon_name: iconName || 'utensils',
-        sort_order: parseInt(sortOrder || 0),
-        is_active: isActive,
-        description: desc
-      };
-
-      const url = catId ? `/api/v1/admin/categories/${catId}/` : '/api/v1/admin/categories/';
-      const method = catId ? 'PATCH' : 'POST';
-
-      await apiRequest(url, {
-        method: method,
-        body: JSON.stringify(payload)
-      });
-
-      showToast(catId ? (t('category_updated_success') || 'Kategoria atualizada ho susesu!') : (t('category_created_success') || 'Kategoria foun kria ho susesu!'), 'success');
-      SoundEffects.playSuccess();
-      bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
-      setTimeout(() => window.location.reload(), 700);
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    } finally {
-      btnSave.disabled = false;
-      btnSave.innerHTML = `<i class="fa-solid fa-check me-1"></i> ${t('save') || 'Rai Kategoria'}`;
-    }
-  }
-
-  async function toggleCategoryStatus(catId) {
-    try {
-      await apiPost(`/api/v1/admin/categories/${catId}/toggle-status/`);
-      showToast('Status kategoria atualizadu!', 'success');
-      SoundEffects.playSuccess();
-      setTimeout(() => window.location.reload(), 600);
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    }
-  }
-
-  function confirmDeleteCategory(catId, catName, itemCount) {
-    if (itemCount > 0) {
-      showToast(`Kategoria '${catName}' sei iha menu ${itemCount}. Favór muda ka hamos uluk menu sira molok hamos kategoria ne'e!`, 'warning');
-      return;
-    }
-
-    document.getElementById('delete-confirm-message').textContent = t('confirm_delete_cat_msg') || 'Ita-boot iha serteza hakarak hamos kategoria ne\'e?';
-    document.getElementById('delete-confirm-target').textContent = catName;
-
-    const btnExec = document.getElementById('btn-confirm-delete-execute');
-    btnExec.onclick = async () => {
-      btnExec.disabled = true;
-      btnExec.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-      try {
-        await apiRequest(`/api/v1/admin/categories/${catId}/`, { method: 'DELETE' });
-        showToast(t('category_deleted_success') || 'Kategoria hamos ho susesu!', 'success');
-        SoundEffects.playSuccess();
-        bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
-        setTimeout(() => window.location.reload(), 600);
-      } catch (e) {
-        showToast(e.message, 'error');
-        SoundEffects.playError();
-      } finally {
-        btnExec.disabled = false;
-        btnExec.innerHTML = `<i class="fa-solid fa-trash-can me-1"></i> ${t('delete') || 'Hamos'}`;
-      }
-    };
-
-    const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-    modal.show();
-  }
-
-  // --------------------------------------------------------------------------
-  // Table QR Rotation & User Creation
-  // --------------------------------------------------------------------------
-  async function rotateTableQR(tableId, tableName) {
-    if (!confirm(`Troka token QR ba ${tableName}? QR code tuan sei la vale kedas.`)) return;
-    try {
-      await apiPost(`/api/v1/admin/tables/${tableId}/rotate-qr/`);
-      showToast(`Token QR ba ${tableName} troka ho susesu!`, 'success');
-      SoundEffects.playSuccess();
-      setTimeout(() => window.location.reload(), 800);
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    }
-  }
-
-  async function submitCreateStaffUser() {
-    const fullName = document.getElementById('new-user-fullname').value.trim();
-    const username = document.getElementById('new-user-username').value.trim();
-    const password = document.getElementById('new-user-password').value.trim();
-    const role = document.getElementById('new-user-role').value;
-
-    if (!username || !password) {
-      showToast('Favór preenxe naran-uzuáriu no liafuan xave!', 'warning');
-      return;
-    }
-
-    try {
-      await apiPost('/api/v1/admin/users/create/', {
-        username: username,
-        password: password,
-        role: role,
-        first_name: fullName,
-      });
-      showToast(`Konta ${username} (${role}) kria ho susesu!`, 'success');
-      SoundEffects.playSuccess();
-      bootstrap.Modal.getInstance(document.getElementById('createUserModal')).hide();
-      document.getElementById('new-user-fullname').value = '';
-      document.getElementById('new-user-username').value = '';
-      document.getElementById('new-user-password').value = '';
-    } catch (e) {
-      showToast(e.message, 'error');
-      SoundEffects.playError();
-    }
-  }
-</script>
+<script src="{% static 'js/admin.js' %}"></script>
 {% endblock %}

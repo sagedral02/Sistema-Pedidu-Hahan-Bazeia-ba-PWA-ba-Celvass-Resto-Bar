@@ -1,82 +1,64 @@
-<!DOCTYPE html>
-<html lang="tet">
-<head>
-  <meta charset="UTF-8">
-  <title>Imprime QR Code Meza — {{ current_restaurant.name }}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@500;700&display=swap" rel="stylesheet">
+{% extends 'base/base.html' %}
+{% load static %}
 
-  <style>
-    body {
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      background-color: #0b0f19;
-      color: #fff;
-      padding: 2rem;
-    }
-    .qr-card {
-      background: #ffffff;
-      color: #000000;
-      border: 2px dashed #f97316;
-      border-radius: 20px;
-      padding: 1.5rem;
-      text-align: center;
-      margin-bottom: 2rem;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-      page-break-inside: avoid;
-    }
-    .qr-img {
-      width: 170px;
-      height: 170px;
-      margin: 1rem auto;
-      display: block;
-    }
-    @media print {
-      body {
-        background: #fff !important;
-        color: #000 !important;
-        padding: 0 !important;
-      }
-      .no-print {
-        display: none !important;
-      }
-      .qr-card {
-        border-color: #000 !important;
-        box-shadow: none !important;
-      }
-    }
-  </style>
-</head>
-<body>
+{% block title %}QR meza - {{ current_restaurant.name }}{% endblock %}
+{% block role %}admin{% endblock %}
+{% block main_class %}is-medium{% endblock %}
 
-  <div class="container text-center mb-4 no-print">
-    <h2 class="fw-bold text-white" style="font-family: 'Outfit', sans-serif;">Follu Imprime QR Code ba Meza Restorante</h2>
-    <p class="text-white-50">Korta no tau QR Code ne'e iha meza bainaka ida-idak atu kliente bele halo pedidu direitamente.</p>
-    <button class="btn btn-warning px-4 py-2 fw-bold rounded-pill text-dark shadow" onclick="window.print()">
-      <i class="fa-solid fa-print me-1"></i> Imprime / Rai PDF
-    </button>
-  </div>
-
-  <div class="container">
-    <div class="row g-4">
-      {% for t in tables %}
-        <div class="col-md-4 col-sm-6">
-          <div class="qr-card">
-            <h6 class="text-uppercase text-secondary fw-bold small mb-0">{{ current_restaurant.name }}</h6>
-            <h3 class="fw-bold text-dark my-1" style="font-family: 'Outfit', sans-serif;">{{ t.display_name }}</h3>
-            <span class="badge bg-dark px-3 py-1">Kódigu: {{ t.table_code }}</span>
-
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ scheme }}://{{ host }}/t/{{ t.qr_token }}/" alt="{{ t.display_name }} QR Code" class="qr-img">
-
-            <div class="small fw-bold text-danger mb-1">Skanu QR Code hodi Halo Pedidu</div>
-            <div class="text-muted small" style="font-size: 11px;">Scan QR code to view menu &amp; order</div>
-            <hr class="my-2">
-            <code class="small text-muted" style="font-size: 10px;">{{ scheme }}://{{ host }}/t/{{ t.qr_token|slice:":12" }}...</code>
-          </div>
-        </div>
-      {% endfor %}
+{% block topbar %}
+<header class="app-topbar no-print">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="{% url 'admin-portal' %}#tables-panel">
+      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-arrow-left"></i></span>
+      <span class="app-brand-text" data-i18n="tables_qr_title">Meza no QR</span>
+    </a>
+    <div class="app-topbar-actions">
+      <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="print_or_pdf">Imprime / PDF</span></button>
     </div>
   </div>
+</header>
+{% endblock %}
 
-</body>
-</html>
+{% block content %}
+  <p class="text-secondary-app no-print mb-3" data-i18n="qr_sheet_desc">Imprime, korta no tau QR ida-idak iha meza ne'ebé loos.</p>
+  <div class="row g-3">
+    {% for tbl in tables %}
+      <div class="col-6 col-md-4">
+        <div class="qr-card">
+          <div class="fs-8 text-tertiary text-uppercase fw-semibold">{{ current_restaurant.name }}</div>
+          <div class="fw-bold fs-5 mt-1">{{ tbl.display_name }}</div>
+          <span class="table-chip mt-1">{{ tbl.table_code }}</span>
+          <div class="qr-code" data-qr="{{ scheme }}://{{ host }}/t/{{ tbl.qr_token }}/" role="img" aria-label="QR {{ tbl.display_name }}"></div>
+          <div class="fw-semibold fs-7">Skanu atu haree menu no halo pedidu</div>
+          <div class="text-tertiary fs-8">Scan to view the menu and order</div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="col-12"><div class="empty-state"><i class="fa-solid fa-chair" aria-hidden="true"></i><div data-i18n="no_tables_found">Seidauk iha meza</div></div></div>
+    {% endfor %}
+  </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .qr-code { margin: 0.75rem auto; width: 170px; height: 170px; }
+  .qr-code svg { width: 100%; height: 100%; display: block; }
+  @media print {
+    @page { margin: 10mm; }
+    .qr-card { border-color: #000; }
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/qrcode/qrcode.js' %}"></script>
+<script>
+  // QR codes are generated in the browser so table tokens never leave this page.
+  document.querySelectorAll('[data-qr]').forEach((el) => {
+    const qr = qrcode(0, 'M');
+    qr.addData(el.dataset.qr);
+    qr.make();
+    el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  });
+</script>
+{% endblock %}

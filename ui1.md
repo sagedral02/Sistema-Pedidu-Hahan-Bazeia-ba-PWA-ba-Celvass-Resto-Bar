@@ -1,3 +1,5 @@
+> **Nota (v3, Novembru 2026):** Dokumentu ne'e istóriku. Tema "dark glassmorphism" no "flying glass dock" troka ona ho tema naroman, top bar + tab bar iha telemóvel, no tabela ne'ebé sai kartaun iha ekran ki'ik. Haree seksaun "Interface (v3)" iha `README.md` no `static/css/style.css` ba padraun atuál.
+
 # CELVASS RESTO & BAR — SPECIFIKASAUN TÉKNIKA REVISI V2.2 (UI1.MD)
 ## AUDIT IMPLEMENTASAUN UI.MD, KOMPAKTIKASAUN KATALOGU MENU DINÁMIKU & SISTEMA MACOS-STYLE FLYING GLASS DOCK MULTI-ROLE
 

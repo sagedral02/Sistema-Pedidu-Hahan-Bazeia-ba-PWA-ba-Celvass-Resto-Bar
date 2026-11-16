@@ -1,0 +1,23 @@
+<header class="app-topbar">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="{% if qr_token %}/t/{{ qr_token }}/{% else %}/{% endif %}">
+      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+      <span class="app-brand-text d-none d-sm-inline">{{ current_restaurant.name }}</span>
+    </a>
+    {% if table %}
+      <span class="table-chip" title="{{ table.display_name }}"><i class="fa-solid fa-chair" aria-hidden="true"></i>{{ table.table_code }}</span>
+    {% endif %}
+    <div class="app-topbar-actions">
+      {% include 'base/_lang_menu.html' %}
+      {% if show_menu_tools %}
+        <button type="button" class="icon-btn is-outlined" data-bs-toggle="offcanvas" data-bs-target="#cartOffcanvas" aria-controls="cartOffcanvas" aria-label="Karreta" data-i18n-title="cart_title" title="Karreta">
+          <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
+          <span class="count-dot" id="top-cart-count" hidden>0</span>
+        </button>
+      {% endif %}
+      {% if user.is_authenticated %}
+        <a class="icon-btn" href="{% if user.is_admin %}{% url 'admin-portal' %}{% elif user.is_cashier %}{% url 'cashier-portal' %}{% else %}{% url 'kitchen-portal' %}{% endif %}" title="Fila ba portal staff" aria-label="Fila ba portal staff"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></a>
+      {% endif %}
+    </div>
+  </div>
+</header>

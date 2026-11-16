@@ -46,7 +46,7 @@ Plataforma ne'e integra **Cashier Verification Gate** (*gerbang verifikasi kasir
 | 🪑 Meja & Sesaun | QR token seguru kada meja, kontrolu sesaun ativu, limitasaun pedidu pendente ba seguransa husi spam |
 | 📡 Real-Time & Event | WebSockets (Django Channels + Redis) ba atualizasaun instantáneu entre Kliénte, Kasir, no Koziña sem refresh |
 | 📨 Transactional Outbox | Outbox pattern ba fiabilidade mensajen no event dispatch sem lakon dadus transasaun |
-| 🔐 Seguransa & RBAC | Role-Based Access (Admin, Cashier, Kitchen, Waiter), CSRF, Rate Limiting, Idempotency-Key ba prevensaun double-order |
+| 🔐 Seguransa & RBAC | Role-Based Access (Admin, Cashier, Kitchen), device lock ho cookie httpOnly, CSRF, Idempotency-Key ba prevensaun double-order |
 | 📊 Auditoria & Relatóriu | Audit trail kompletu ba kada mudansa estatutu no movimentu osan, relatóriu vendas diáriu no analítika menu |
 | 🐳 Operasaun & Infra | Docker Compose (Daphne ASGI + Redis + Postgres + Nginx), SQLite fallback ba ambiente dezenvolvimentu |
 
@@ -185,15 +185,15 @@ Depois de halo `seed_demo`, konta sira tuir mai bele uza direta:
 | **Admin** | `admin` | `admin123` | `/admin-portal/` | Jestaun menu, relatóriu vendas, no QR print sheet |
 | **Cashier (Kaixa)** | `cashier` | `cashier123` | `/cashier/` | Verifika pedidu foun, simu pagamentu, no split-bill |
 | **Kitchen (Koziña)** | `kitchen` | `kitchen123` | `/kitchen/` | Painél KDS, audio alert, atualiza estatutu preparasaun |
-| **Waiter (Garçon)** | `waiter` | `waiter123` | `/` | Monitoriza meja no tulun kliente sira |
 | **Customer (Kliente)** | *(Sem Login)* | *(Scan QR)* | `/t/demo-table-1/` | Hili menu, sesta, no submete pedidu dine-in |
 
 ---
 
 ## 📱 Fitur PWA (Progressive Web App)
 
-- **Offline Capability**: Service Worker (`/sw.js`) rai *cache* ba pájina, estilistika CSS, ikone no script esensiál. Se rede monu, kliente nafatin bele haree katálogu menu no hetan avizu amigavel.
-- **Web App Manifest (`/manifest.json`)**: Suporta instalasaun direta ba *Home Screen* smartphone ho esperiénsia nativa (*standalone mode*).
+- **Offline Capability**: Service Worker (`static/js/sw.js`, servidu iha `/sw.js`) rai CSS, JS, font no ikone (self-hosted iha `static/vendor/`). Pájina kliente (`/`, `/t/...`) uza *network-first* no copy cache foin uza bainhira offline. Portal staff, login/logout no API **nunka** rai iha cache; logout hamoos cache browser (`Clear-Site-Data`).
+- **Web App Manifest (`/manifest.json`)**: Instalavel iha *Home Screen* (standalone), orientasaun livre (`any`) atu KDS no Kaixa bele uza tablet landscape.
+- **Device lock**: Servidór haruka cookie `celvass_device_id` (httpOnly) bainhira loke pájina meza. Sesaun ne'ebé iha ona na'in rejeita telemóvel seluk, inklui pedidu sem cookie.
 - **Multi-Idioma Dinámiku (`i18n.js`)**: Kliente bele muda lian direta iha menu entre **Tetun**, **Português**, **English**, no **Bahasa Indonesia**.
 - **Real-Time Sound System**: Notifikasaun sonoru automatiku iha portal Kaixa no Koziña bainhira pedidu foun tama ka prontu ona.
 
@@ -230,6 +230,18 @@ Teste sira kobre:
 3. `test_idempotency_and_limits.py` — Prevensaun pedidu duplikadu no limitasaun spam.
 4. `test_pricing_and_money.py` — Validasaun kalkulasaun osan, troka, no presu autoritativu.
 5. `test_state_machines.py` — Tranzisaun estatutu pedidu no sesaun meja.
+6. `test_security_hardening.py` — Device lock, tracker so ba meza rasik, validasaun `guest_count`, erro 500 la hatudu detallu internu, KPI admin, redirect login tuir papél.
+7. `test_ui_shell_and_pwa.py` — Navegasaun tuir papél, chave i18n kompletu iha lian 4, la iha CDN / emoji / class Bootstrap la válidu, manifest, service worker, logout no password staff.
+
+---
+
+## 🎨 Interface (v3)
+
+- Tema naroman (fundu `#faf8f5`, superfísie mutin), kór aksentu tuir portal: Kliente `#c2410c`, Kaixa `#047857`, Dapur `#1d4ed8`, Admin `#334155`. Font ida de'it: Plus Jakarta Sans.
+- Telemóvel (< 768px): tab bar iha kraik (maksimu 5, seluk iha "Seluk"). Tablet/laptop: navegasaun horizontál iha top bar. Panel uza hash URL (ez. `/admin-portal/#menu-panel`).
+- Tabela sai kartaun iha telemóvel (`.table-stack` + `data-label`).
+- Arkivu prinsipál: `static/css/style.css`, `static/js/app.js` (panel, dialog konfirma, escape HTML), `templates/base/_nav_*.html` no `_tabbar_*.html`.
+- Depois muda CSS/JS, halai `python manage.py collectstatic --noinput` tanba Vercel servi `staticfiles/`.
 
 ---
 

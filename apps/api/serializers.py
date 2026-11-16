@@ -106,6 +106,7 @@ class RestaurantTableSerializer(serializers.ModelSerializer):
             'status': session.status,
             'guest_count': session.guest_count,
             'opened_at': session.opened_at,
+            'bill_requested_at': session.bill_requested_at,
             'bill_total': str(bill['grand_total']),
             'total_paid': str(bill['total_paid']),
             'remaining_balance': str(bill['remaining_balance']),

@@ -1,0 +1,22 @@
+<header class="app-topbar">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="{% url 'admin-portal' %}">
+      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+      <span class="min-w-0">
+        <span class="app-brand-text d-block">{{ current_restaurant.name }}</span>
+        <span class="app-brand-sub" data-i18n="role_admin_portal">Admin</span>
+      </span>
+    </a>
+    <nav class="app-nav" aria-label="Navegasaun admin">
+      <button type="button" class="app-nav-link" data-panel="overview-panel"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span data-i18n="nav_overview">Rezumu</span></button>
+      <button type="button" class="app-nav-link" data-panel="menu-panel"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><span data-i18n="menu_stock">Menu &amp; Stok</span></button>
+      <button type="button" class="app-nav-link" data-panel="categories-panel"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span data-i18n="categories_nav">Kategoria</span></button>
+      <button type="button" class="app-nav-link" data-panel="tables-panel"><i class="fa-solid fa-qrcode" aria-hidden="true"></i><span data-i18n="tables_qr">Meza &amp; QR</span></button>
+      <button type="button" class="app-nav-link" data-panel="users-panel"><i class="fa-solid fa-users" aria-hidden="true"></i><span data-i18n="staff_users">Staff</span></button>
+      <button type="button" class="app-nav-link" data-panel="audit-panel"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span data-i18n="audit_logs">Auditoria</span></button>
+    </nav>
+    <div class="app-topbar-actions">
+      {% include 'base/_account_menu.html' %}
+    </div>
+  </div>
+</header>

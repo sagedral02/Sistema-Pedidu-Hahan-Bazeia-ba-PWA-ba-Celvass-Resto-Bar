@@ -1,303 +1,71 @@
-{% load static %}
-<!DOCTYPE html>
+{% load static %}<!DOCTYPE html>
 <html lang="tet">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>{% block title %}{{ current_restaurant.name }} — Dine-In PWA{% endblock %}</title>
-  
-  <!-- PWA Meta -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}{{ current_restaurant.name }}{% endblock %}</title>
+  <meta name="description" content="{{ current_restaurant.name }} - pedidu dine-in liuhosi QR">
+
   <link rel="manifest" href="{% url 'pwa-manifest' %}">
-  <meta name="theme-color" content="#f97316">
+  <meta name="theme-color" content="#ffffff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Celvass PWA">
-  <meta name="description" content="Celvass Resto & Bar — Sistema Pedidu Digital PWA Modernu">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Celvass">
+  <link rel="icon" href="{% static 'icons/favicon.ico' %}">
+  <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
 
-  <!-- Google Fonts: Outfit & Plus Jakarta Sans -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-  <!-- Bootstrap 5.3 & FontAwesome 6 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
-  <!-- Unified Dark Glassmorphism Styles -->
+  <link rel="preload" href="{% static 'vendor/fonts/plus-jakarta-sans-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{% static 'vendor/fonts/plus-jakarta-sans.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/fontawesome/css/all.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
   {% block extra_css %}{% endblock %}
-
-  <style>
-    .dropdown-menu {
-      background: rgba(14, 19, 32, 0.96) !important;
-      backdrop-filter: blur(28px) !important;
-      -webkit-backdrop-filter: blur(28px) !important;
-      border: 1px solid rgba(255, 255, 255, 0.1) !important;
-      border-radius: 16px !important;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6) !important;
-      padding: 0.5rem !important;
-    }
-    .dropdown-item {
-      color: rgba(255, 255, 255, 0.85) !important;
-      border-radius: 10px !important;
-      font-family: 'Outfit', sans-serif !important;
-      font-weight: 500 !important;
-      padding: 0.5rem 0.9rem !important;
-      transition: all 0.15s ease !important;
-    }
-    .dropdown-item:hover, .dropdown-item:focus {
-      background: rgba(249, 115, 22, 0.18) !important;
-      color: #f97316 !important;
-    }
-    .dropdown-divider {
-      border-top-color: rgba(255, 255, 255, 0.1) !important;
-    }
-    .dropdown-header {
-      color: rgba(255, 255, 255, 0.45) !important;
-      font-size: 0.75rem !important;
-      text-transform: uppercase !important;
-      letter-spacing: 0.5px !important;
-    }
-  </style>
 </head>
-<body class="{% block body_class %}{% endblock %}">
-
+<body data-role="{% block role %}customer{% endblock %}" data-default-panel="{% block default_panel %}{% endblock %}" class="{% block body_class %}{% endblock %}">
   {% csrf_token %}
+  <a class="visually-hidden-focusable btn btn-primary position-absolute m-2" style="z-index:2000" href="#main">Ba konteúdu</a>
 
-  <!-- Top macOS Flying Glass Dock Navigation -->
-  <header class="flying-glass-dock-wrapper" id="flyingDockWrapper">
-    <nav class="flying-glass-dock" aria-label="Navegasaun Prinsipál">
-      
-      <!-- Normal Dock Content Container -->
-      <div id="dock-normal-items" class="d-flex align-items-center gap-1">
-        <!-- Brand Logo -->
-        <a class="dock-item-btn text-white fw-bold px-2" href="{% if user.is_authenticated %}{% if user.is_admin %}/admin-portal/{% elif user.is_cashier %}/cashier/{% elif user.is_kitchen %}/kitchen/{% else %}/{% endif %}{% else %}{% if qr_token %}/t/{{ qr_token }}/{% else %}/{% endif %}{% endif %}">
-          <div class="brand-logo-icon" style="width: 26px; height: 26px; border-radius: 7px; background: var(--primary-gradient); display: flex; align-items: center; justify-content: center; font-size: 0.8rem;">
-            <i class="fa-solid fa-utensils text-white"></i>
-          </div>
-          <span class="d-none d-lg-inline">{{ current_restaurant.name }}</span>
+  {% block topbar %}
+    <header class="app-topbar">
+      <div class="app-topbar-inner">
+        <a class="app-brand" href="/">
+          <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+          <span class="app-brand-text">{{ current_restaurant.name }}</span>
         </a>
-
-        <div class="dock-divider"></div>
-
-        <!-- CONDITIONAL DOCK: CUSTOMER TABLE ORDERING VS STAFF PORTALS -->
-        {% if table or qr_token %}
-          <!-- CUSTOMER ORDERING DOCK (Active on Table Menu: Table Badge, Search Bar trigger, and Cart) -->
-          <div id="dock-table-badge-container" class="d-inline-flex align-items-center">
-            <span class="badge bg-warning text-dark fw-bold px-2 py-1 rounded-pill me-1 d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.76rem; white-space: nowrap;">
-              <i class="fa-solid fa-chair text-dark"></i>
-              <span id="dock-table-name-mobile">{{ table.table_code|default:"T-01" }}</span>
-              <span class="d-none d-md-inline ms-1 fw-semibold opacity-75">({{ table.compact_name|default:table.display_name|default:"Meza" }})</span>
-            </span>
-          </div>
-
-          <button type="button" class="dock-item-btn" id="dock-btn-search" onclick="toggleDockSearch()" title="Buka Menu">
-            <i class="fa-solid fa-magnifying-glass text-warning"></i>
-            <span class="d-none d-md-inline" data-i18n="search">Buka</span>
-          </button>
-
-          <button type="button" class="dock-item-btn position-relative" id="dock-btn-cart" data-bs-toggle="offcanvas" data-bs-target="#cartOffcanvas" title="Karreta Pedidu">
-            <i class="fa-solid fa-basket-shopping text-warning"></i>
-            <span class="badge bg-warning text-dark rounded-pill" id="top-dock-cart-badge" style="display:none; font-size:0.65rem;">0</span>
-            <span class="d-none d-md-inline" data-i18n="cart_title">Karreta</span>
-          </button>
-
-        {% elif user.is_authenticated %}
-          <!-- STAFF DEDICATED ITEMS (Admin, Cashier, Kitchen Portals) -->
-          {% if user.is_admin %}
-            <!-- ADMIN DEDICATED ITEMS -->
-            <button class="dock-item-btn active" data-dock-tab="#menu-panel">
-              <i class="fa-solid fa-bowl-food text-warning"></i>
-              <span class="d-none d-md-inline" data-i18n="menu_stock">Menu &amp; Stok</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#categories-panel">
-              <i class="fa-solid fa-layer-group text-warning"></i>
-              <span class="d-none d-md-inline" data-i18n="categories_nav">Kategoria</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#tables-panel">
-              <i class="fa-solid fa-table-cells text-info"></i>
-              <span class="d-none d-md-inline" data-i18n="tables_qr">Meza &amp; QR</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#users-panel">
-              <i class="fa-solid fa-users text-success"></i>
-              <span class="d-none d-md-inline" data-i18n="staff_users">Staff</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#reports-panel">
-              <i class="fa-solid fa-chart-pie text-warning"></i>
-              <span class="d-none d-md-inline" data-i18n="reports">Relatóriu</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#audit-panel">
-              <i class="fa-solid fa-clipboard-list text-primary"></i>
-              <span class="d-none d-md-inline" data-i18n="audit_logs">Auditoria</span>
-            </button>
-          {% elif user.is_cashier %}
-            <!-- CASHIER DEDICATED ITEMS -->
-            <button class="dock-item-btn active" data-dock-tab="#live-pos-panel">
-              <i class="fa-solid fa-cash-register text-warning"></i>
-              <span class="d-none d-sm-inline" data-i18n="live_pos">POS &amp; Fila</span>
-              <span id="pending-count-badge" class="badge bg-danger rounded-pill ms-1" style="display:none; font-size:0.65rem;">0</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#orders-history-panel" onclick="if (typeof cashierApp !== 'undefined') cashierApp.loadTodayOrdersHistory();">
-              <i class="fa-solid fa-clock-rotate-left text-info"></i>
-              <span class="d-none d-md-inline" data-i18n="order_history">Istóriku</span>
-            </button>
-            <button class="dock-item-btn position-relative" data-dock-tab="#bill-alerts-panel" onclick="if (typeof cashierApp !== 'undefined') { cashierApp.loadTables(); cashierApp.updateBillAlertsUI(); }">
-              <i class="fa-solid fa-receipt text-danger"></i>
-              <span class="d-none d-md-inline" data-i18n="bill_alerts">Alerta Konta</span>
-              <span class="badge bg-danger rounded-pill ms-1" id="bill-alerts-count" style="display:none; font-size:0.65rem;">0</span>
-            </button>
-            <button class="dock-item-btn" data-dock-tab="#shift-close-panel" onclick="if (typeof cashierApp !== 'undefined') cashierApp.loadShiftSummary();">
-              <i class="fa-solid fa-vault text-success"></i>
-              <span class="d-none d-md-inline" data-i18n="shift_close">Fechu Kaixa</span>
-            </button>
-            <button class="dock-item-btn" onclick="if (typeof cashierApp !== 'undefined') { cashierApp.loadPendingOrders(); cashierApp.loadTables(); cashierApp.loadActivationRequests(); }" title="Refresh">
-              <i class="fa-solid fa-rotate text-info"></i>
-            </button>
-          {% elif user.is_kitchen %}
-            <!-- KITCHEN DEDICATED ITEMS -->
-            <button class="dock-item-btn active" onclick="if (typeof kdsApp !== 'undefined') kdsApp.loadQueue();">
-              <i class="fa-solid fa-fire text-warning"></i>
-              <span class="d-none d-sm-inline" data-i18n="kds_title">Fila Dapur</span>
-            </button>
-            <button class="dock-item-btn" onclick="toggleFullscreen()" title="Fullscreen">
-              <i class="fa-solid fa-expand text-success"></i>
-              <span class="d-none d-md-inline">Fullscreen</span>
-            </button>
-            <button class="dock-item-btn" onclick="if (typeof kdsApp !== 'undefined') kdsApp.loadQueue();" title="Refresh">
-              <i class="fa-solid fa-rotate text-info"></i>
-            </button>
-          {% endif %}
-        {% endif %}
-
-        <div class="dock-divider"></div>
-
-        <!-- Ultra-Compact Language Selector Pill (Fits mobile without overflow) -->
-        <div class="dropdown">
-          <button class="dock-item-btn dropdown-toggle px-2 py-1" type="button" data-bs-toggle="dropdown" data-bs-display="static" id="current-lang-label" style="font-size: 0.8rem; border-radius: 9999px;">
-            🇹🇱<span class="d-none d-lg-inline ms-1">Tetun</span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow">
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('tet')">🇹🇱 Tetun</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('pt')">🇵🇹 Português</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('en')">🇬🇧 English</a></li>
-            <li><a class="dropdown-item" href="javascript:void(0)" onclick="setLanguage('id')">🇮🇩 Indonesia</a></li>
-          </ul>
-        </div>
-
-        <!-- Staff / Role Quick Return Link or Logout -->
-        {% if user.is_authenticated %}
-          {% if table or qr_token %}
-            <!-- If staff is previewing customer table, provide direct return button to their portal -->
-            <a href="{% if user.is_admin %}/admin-portal/{% elif user.is_cashier %}/cashier/{% elif user.is_kitchen %}/kitchen/{% else %}/{% endif %}" class="dock-item-btn text-warning" title="Fila ba Dashboard Staff">
-              <i class="fa-solid fa-arrow-left"></i>
-              <span class="d-none d-md-inline">{% if user.is_cashier %}Kaixa{% elif user.is_admin %}Admin{% elif user.is_kitchen %}Dapur{% else %}Fila{% endif %}</span>
-            </a>
-          {% else %}
-            <a href="{% url 'logout' %}" class="dock-item-btn text-danger" title="Sai (Logout)">
-              <i class="fa-solid fa-arrow-right-from-bracket"></i>
-              <span class="d-none d-lg-inline" data-i18n="logout">Sai</span>
-            </a>
-          {% endif %}
-        {% else %}
-          <a href="{% url 'login' %}" class="dock-item-btn text-warning" title="Portal Staff">
-            <i class="fa-solid fa-shield-halved"></i>
-            <span class="d-none d-sm-inline" data-i18n="login_staff">Staff</span>
-          </a>
-        {% endif %}
-      </div>
-
-      <!-- Morphing Inline Dock Search Bar (Revealed when search button is clicked in dock) -->
-      <div id="dock-search-box" class="dock-search-inline align-items-center w-100" style="display: none !important;">
-        <i class="fa-solid fa-magnifying-glass text-warning me-2 fs-6"></i>
-        <input type="text" id="dock-search-input" class="dock-search-input flex-grow-1" placeholder="Buka menu hahan, hemu, seafood..." data-i18n-placeholder="search_dock_placeholder" autocomplete="off">
-        <button type="button" class="btn btn-link text-white-50 p-0 ms-2" onclick="closeDockSearch()" title="Taka" data-i18n-title="close">
-          <i class="fa-solid fa-circle-xmark fs-5"></i>
-        </button>
-      </div>
-
-    </nav>
-  </header>
-
-  <!-- PWA Install Prompt Banner -->
-  <div id="pwa-install-banner" class="pwa-banner py-2 px-3 shadow" style="display: none;">
-    <div class="container d-flex align-items-center justify-content-between gap-3">
-      <div class="d-flex align-items-center gap-2">
-        <img src="/static/icons/icon-192.png" width="36" height="36" class="rounded-2 shadow-sm" alt="Celvass App">
-        <div>
-          <div class="fw-bold small text-white" data-i18n="install_pwa_text">Instala Celvass Resto &amp; Bar PWA</div>
-          <div class="small text-white-50 d-none d-sm-block">Asesu menus lais, poupa kuota, no bele haree hahan offline!</div>
+        <div class="app-topbar-actions">
+          {% include 'base/_lang_menu.html' %}
         </div>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <button class="btn btn-sm btn-warning fw-bold px-3 rounded-pill shadow-sm text-dark" onclick="installPWA()" data-i18n="install_pwa_btn">
-          <i class="fa-solid fa-download me-1"></i> Instala PWA
-        </button>
-        <button class="btn btn-sm btn-link text-white-50 p-1" onclick="dismissPwaBanner()" title="Taka">
-          <i class="fa-solid fa-xmark fs-5"></i>
-        </button>
-      </div>
+    </header>
+  {% endblock %}
+
+  <div id="pwa-install-banner" class="install-banner" role="region" aria-label="Instala aplikasaun">
+    <img src="{% static 'icons/icon-192.png' %}" width="32" height="32" alt="">
+    <div class="install-banner-text">
+      <strong data-i18n="install_pwa_text">Instala aplikasaun Celvass</strong>
+      <div class="text-tertiary fs-7 d-none d-sm-block" data-i18n="install_pwa_desc">Loke lais husi ekran prinsipál.</div>
     </div>
+    <button type="button" class="btn btn-sm btn-primary" onclick="installPWA()"><span data-i18n="install_pwa_btn">Instala</span></button>
+    <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="dismissPwaBanner()" aria-label="Taka" data-i18n-title="close"><i class="fa-solid fa-xmark"></i></button>
   </div>
 
-  <!-- Toast Notification Container -->
-  <div id="toast-container" class="position-fixed top-0 end-0 p-3" style="z-index: 2050;"></div>
+  <div id="toast-container" aria-live="polite"></div>
 
-  <!-- Main Content -->
-  <main class="container-fluid py-3">
+  <main id="main" class="app-main {% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 
-  <!-- Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  {% block tabbar %}{% endblock %}
+  {% block overlays %}{% endblock %}
+
+  <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
   <script src="{% static 'js/i18n.js' %}"></script>
   <script src="{% static 'js/api.js' %}"></script>
+  <script src="{% static 'js/app.js' %}"></script>
   <script src="{% static 'js/sound.js' %}"></script>
   <script src="{% static 'js/websocket.js' %}"></script>
   <script src="{% static 'js/pwa.js' %}"></script>
-  <script>
-    // Show PWA install button in navbar when installable
-    document.addEventListener('pwa-installable', () => {
-      const btn = document.getElementById('navbar-pwa-btn');
-      if (btn) btn.style.removeProperty('display');
-    });
-
-    function toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      } else {
-        document.exitFullscreen().catch(() => {});
-      }
-    }
-
-    // Universal Dock Tab Switching Controller
-    document.addEventListener('click', function(e) {
-      const btn = e.target.closest('.dock-item-btn[data-dock-tab]');
-      if (!btn) return;
-      
-      const targetSelector = btn.getAttribute('data-dock-tab');
-      if (!targetSelector) return;
-      
-      // Set active in dock
-      const parentDock = btn.closest('.flying-glass-dock');
-      if (parentDock) {
-        parentDock.querySelectorAll('.dock-item-btn[data-dock-tab]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-      }
-
-      // Activate tab pane
-      const targetPane = document.querySelector(targetSelector);
-      if (targetPane) {
-        const tabContent = targetPane.closest('.tab-content');
-        if (tabContent) {
-          tabContent.querySelectorAll('.tab-pane').forEach(p => {
-            p.classList.remove('show', 'active');
-          });
-          targetPane.classList.add('show', 'active');
-        }
-      }
-    });
-  </script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

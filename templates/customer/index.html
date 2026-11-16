@@ -1,312 +1,203 @@
 {% extends 'base/base.html' %}
 {% load static %}
 
-{% block title %}{{ table.display_name }} — {{ current_restaurant.name }}{% endblock %}
+{% block title %}{{ table.display_name }} - {{ current_restaurant.name }}{% endblock %}
+{% block role %}customer{% endblock %}
+{% block main_class %}is-medium{% endblock %}
+
+{% block topbar %}
+  {% with show_menu_tools=True %}{% include 'base/_nav_customer.html' %}{% endwith %}
+{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 960px; padding-bottom: 70px;">
-
-  <!-- Restaurant Hero Banner -->
-  <div class="resto-hero-banner">
-    <div class="row align-items-center g-3">
-      <div class="col-md-7">
-        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-          <span class="badge bg-warning bg-opacity-25 border border-warning border-opacity-50 text-warning fw-bold px-2 py-1 rounded-pill">
-            <i class="fa-solid fa-star me-1"></i> 4.9 (<span data-i18n="reviews_count">500+ Avaliasaun</span>)
-          </span>
-          <span class="badge bg-white bg-opacity-10 border border-white border-opacity-15 text-white px-2 py-1 rounded-pill">
-            <i class="fa-solid fa-location-dot me-1 text-danger"></i> Praia dos Coqueiros, Dili
-          </span>
-        </div>
-        <h3 class="fw-bold mb-1 text-white">{{ current_restaurant.name }}</h3>
-        <p class="text-white-50 small mb-2" data-i18n="resto_tagline">Esperiénsia gastronómika modernu iha tasi-ibun Dili ho vizaun tasi furak no pedidu dixital PWA.</p>
-        
-        <!-- Table & Session Status Badge -->
-        <div class="d-inline-flex flex-wrap align-items-center gap-2 bg-white bg-opacity-10 rounded-3 px-2 py-1 mt-1 border border-white border-opacity-10" style="max-width: 100%;">
-          <div class="d-flex align-items-center gap-1 text-truncate" style="max-width: 160px;">
-            <i class="fa-solid fa-chair text-warning"></i>
-            <span class="fw-bold small text-white text-truncate" title="{{ table.display_name }}">{{ table.display_name|default:"Meza Seidauk Hili" }}</span>
-          </div>
-          {% if session and session.is_active %}
-            <span class="badge bg-success bg-opacity-25 border border-success text-success rounded-pill small text-nowrap">
-              <i class="fa-solid fa-circle-check me-1"></i> <span data-i18n="active_session">Sesi Ativu</span> ({{ session.guest_count }} <span data-i18n="people">Ema</span>)
-            </span>
-          {% else %}
-            <span class="badge bg-warning bg-opacity-25 border border-warning text-warning rounded-pill small text-nowrap">
-              <i class="fa-solid fa-circle-exclamation me-1"></i> <span data-i18n="session_not_opened">Sesi Seidauk Loke</span>
-            </span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="col-md-5 text-md-end">
-        <div class="d-flex flex-wrap gap-2 justify-content-md-end">
-
-          {% if session and session.is_active %}
-            {% if session.status == 'BILL_REQUESTED' %}
-              <button class="btn btn-sm btn-secondary text-white fw-bold rounded-pill px-3 shadow-sm" disabled id="btn-request-bill" data-status="BILL_REQUESTED">
-                <i class="fa-solid fa-clock me-1"></i> <span data-i18n="bill_requested">Konta Husu Tiha Ona</span>
-              </button>
-            {% elif session.status == 'PAID' %}
-              <button class="btn btn-sm btn-success text-white fw-bold rounded-pill px-3 shadow-sm" disabled id="btn-request-bill" data-status="PAID">
-                <i class="fa-solid fa-circle-check me-1"></i> <span data-i18n="paid_status">Selu Tiha Ona</span>
-              </button>
-            {% else %}
-              <button class="btn btn-sm btn-outline-secondary text-white-50 opacity-60 rounded-pill px-3 shadow-sm" disabled onclick="customerApp.requestBill()" id="btn-request-bill" data-status="LOCKED" data-eligible="false" title="Favor halo pedidu uluk molok husu konta">
-                <i class="fa-solid fa-receipt me-1"></i> <span data-i18n="request_bill">Husu Konta</span>
-              </button>
-            {% endif %}
-          {% endif %}
-
-          <button class="btn btn-sm btn-outline-light fw-bold rounded-pill px-3" onclick="installPWA()" id="btn-install-pwa">
-            <i class="fa-solid fa-download me-1 text-warning"></i> <span data-i18n="install_app">Instala App</span>
-          </button>
-        </div>
+  <section class="venue-header">
+    <div class="min-w-0">
+      <h1 class="venue-name">{{ current_restaurant.name }}</h1>
+      <div class="venue-meta">
+        <span><i class="fa-solid fa-chair" aria-hidden="true"></i>{{ table.display_name }}</span>
+        {% if session and session.is_active %}
+          <span class="text-success fw-semibold"><i class="fa-solid fa-circle-check text-success" aria-hidden="true"></i><span data-i18n="active_session">Sesaun ativu</span> &middot; {{ session.guest_count }} <span data-i18n="people">ema</span></span>
+        {% else %}
+          <span class="fw-semibold" style="color:var(--warning)"><i class="fa-solid fa-clock" style="color:var(--warning)" aria-hidden="true"></i><span data-i18n="session_not_opened">Sesaun seidauk loke</span></span>
+        {% endif %}
       </div>
     </div>
-  </div>
 
-  <!-- Session Activation Status Banner -->
+    {% if session and session.is_active %}
+      <div class="text-sm-end">
+        {% if session.status == 'BILL_REQUESTED' %}
+          <button type="button" class="btn btn-secondary-app" disabled id="btn-request-bill" data-status="BILL_REQUESTED"><i class="fa-solid fa-clock" aria-hidden="true"></i><span data-i18n="bill_requested">Konta husu ona</span></button>
+        {% elif session.status == 'PAID' %}
+          <button type="button" class="btn btn-secondary-app" disabled id="btn-request-bill" data-status="PAID"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span data-i18n="paid_status">Selu ona</span></button>
+        {% else %}
+          <button type="button" class="btn btn-secondary-app" disabled id="btn-request-bill" data-status="OPEN" onclick="customerApp.requestBill()"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span data-i18n="request_bill">Husu konta</span></button>
+        {% endif %}
+        <div class="fs-8 text-tertiary mt-1" id="bill-hint" style="max-width:260px"></div>
+      </div>
+    {% endif %}
+  </section>
+
   <div id="session-activation-status-banner"></div>
-
-  <!-- Live Orders Dynamic Section -->
   <div id="customer-active-orders"></div>
 
-
-  <!-- Category Filter Pills -->
-  <div class="mb-4">
-    <div class="d-flex gap-2 overflow-auto pb-2" style="white-space: nowrap; scrollbar-width: none;">
-      <button class="cat-pill active" data-category="all">
-        <i class="fa-solid fa-border-all me-1"></i> <span data-i18n="all_menu">Menu Hotu</span>
-      </button>
+  <div class="menu-section-sticky">
+    <div class="search-field customer-search" id="customer-search">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" id="menu-search" class="form-control" placeholder="Buka hahan ka hemu" data-i18n-placeholder="search_placeholder" aria-label="Buka menu" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div class="chip-row" role="toolbar" aria-label="Kategoria">
+      <button type="button" class="chip active" data-category="all" aria-pressed="true"><span data-i18n="all_menu">Hotu</span></button>
       {% for cat in categories %}
-        <button class="cat-pill" data-category="{{ cat.slug }}">
-          <i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }} me-1"></i> {{ cat.name }}
-        </button>
+        <button type="button" class="chip" data-category="{{ cat.slug }}" aria-pressed="false"><i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }}" aria-hidden="true"></i>{{ cat.name }}</button>
       {% endfor %}
     </div>
   </div>
 
-  <!-- Menu Items Catalog Grid -->
-  <div class="row g-3" id="menu-grid">
+  <div class="menu-grid" id="menu-grid">
     {% for cat in categories %}
       {% for item in cat.items.all %}
         {% if item.availability != 'INACTIVE' %}
-          <div class="col-md-4 col-sm-6 menu-item-col" data-category="{{ cat.slug }}" data-name="{{ item.name }}" data-desc="{{ item.description }}">
-            <div class="menu-card" onclick="openItemModal('{{ item.id }}', '{{ item.name|escapejs }}', '{{ item.price }}', '{{ item.display_image|escapejs }}', '{{ item.description|escapejs }}')">
-              
-              <!-- Fixed Aspect Ratio Image Container -->
-              <div class="menu-card-img-wrapper position-relative">
-                <img src="{{ item.display_image }}" class="menu-card-img" alt="{{ item.name }}" loading="lazy" onerror="this.onerror=null; this.src='/static/icons/default-food.png';">
-                
-                <!-- Interactive Floating Category Chip (Top-Right) -->
-                <span class="menu-card-floating-badge" onclick="event.stopPropagation(); filterByCategory('{{ cat.slug }}');">
-                  <i class="fa-solid fa-tag me-1"></i>{{ cat.name }}
-                </span>
-
-                {% if item.is_featured %}
-                  <span class="badge bg-warning text-dark fw-bold position-absolute top-0 start-0 m-2 rounded-pill px-2 py-1 shadow" style="font-size: 0.65rem;">
-                    <i class="fa-solid fa-star me-1"></i> <span data-i18n="chefs_special">Chef</span>
-                  </span>
+          <div class="menu-item-col" data-category="{{ cat.slug }}" data-name="{{ item.name|lower }}" data-desc="{{ item.description|default:''|lower }}">
+            <button type="button"
+                    class="menu-card{% if item.availability != 'AVAILABLE' %} is-unavailable{% endif %}"
+                    data-item-id="{{ item.id }}"
+                    data-item-name="{{ item.name }}"
+                    data-item-price="{{ item.price }}"
+                    data-item-image="{{ item.display_image }}"
+                    data-item-desc="{{ item.description|default:'' }}"
+                    data-available="{% if item.availability == 'AVAILABLE' %}1{% else %}0{% endif %}"
+                    {% if item.availability != 'AVAILABLE' %}aria-disabled="true"{% endif %}>
+              <span class="menu-card-media">
+                <img src="{{ item.display_image }}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+                {% if item.availability != 'AVAILABLE' %}
+                  <span class="menu-card-flag tone-danger" data-i18n="sold_out">Hotu</span>
+                {% elif item.is_featured %}
+                  <span class="menu-card-flag" data-i18n="chefs_special">Rekomenda</span>
                 {% endif %}
-                <span class="badge bg-black bg-opacity-75 text-white position-absolute bottom-0 end-0 m-2 rounded-pill px-2 py-1 small" style="font-size: 0.65rem;">
-                  <i class="fa-regular fa-clock me-1 text-warning"></i> <span data-i18n="prep_time">10-15m</span>
-                </span>
-              </div>
-
-              <!-- Card Body: 100% Width Title & Micro-Description -->
-              <div class="menu-card-body">
-                <h6 class="menu-card-title">{{ item.name }}</h6>
-                <p class="menu-card-desc-compact">
-                  {{ item.description|default:"Hahán espesiál Celvass Resto & Bar ho ingredientes fresku." }}
-                </p>
-
-                <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top border-white border-opacity-10">
-                  <div class="menu-card-price">${{ item.price }}</div>
-
+              </span>
+              <span class="menu-card-body">
+                <span class="menu-card-cat">{{ cat.name }}</span>
+                <span class="menu-card-title">{{ item.name }}</span>
+                {% if item.description %}<span class="menu-card-desc">{{ item.description }}</span>{% endif %}
+                <span class="menu-card-foot">
+                  <span class="price">${{ item.price }}</span>
                   {% if item.availability == 'AVAILABLE' %}
                     {% if session and session.is_active %}
-                      <button class="btn-add-menu btn-touch-target" onclick="event.stopPropagation(); openItemModal('{{ item.id }}', '{{ item.name|escapejs }}', '{{ item.price }}', '{{ item.display_image|escapejs }}', '{{ item.description|escapejs }}')">
-                        <i class="fa-solid fa-plus"></i> <span data-i18n="add">Aumenta</span>
-                      </button>
+                      <span class="menu-card-add" aria-hidden="true"><i class="fa-solid fa-plus"></i></span>
                     {% else %}
-                      <button class="btn btn-sm btn-outline-warning rounded-pill px-2 py-1" onclick="event.stopPropagation(); customerApp.requestTableActivation(true); showToast(t('session_not_open_toast'), 'warning')" style="font-size: 0.72rem;">
-                        <i class="fa-solid fa-lock me-1"></i> <span data-i18n="locked">Xave Hela</span>
-                      </button>
+                      <span class="menu-card-add is-locked" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
                     {% endif %}
-
-                  {% else %}
-                    <span class="badge bg-danger bg-opacity-25 border border-danger text-danger rounded-pill px-2 py-1" style="font-size: 0.7rem;" data-i18n="sold_out">Hotu Ona</span>
                   {% endif %}
-                </div>
-              </div>
-
-            </div>
+                </span>
+              </span>
+            </button>
           </div>
         {% endif %}
       {% endfor %}
     {% endfor %}
   </div>
 
-</div>
+  <div class="empty-state" id="menu-empty" hidden>
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+    <div class="empty-state-title" data-i18n="menu_no_results">Menu la hetan</div>
+    <div data-i18n="menu_no_results_desc">Koko liafuan seluk ka hili kategoria seluk.</div>
+  </div>
+{% endblock %}
 
-<!-- Floating Cart Bottom Bar -->
-<div id="floating-cart-bar" class="floating-cart-bar" style="display: none;" data-bs-toggle="offcanvas" data-bs-target="#cartOffcanvas">
-  <div class="d-flex align-items-center gap-2">
-    <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; background: var(--primary-gradient);">
-      <i class="fa-solid fa-bag-shopping text-white"></i>
+{% block overlays %}
+  <button type="button" id="floating-cart-bar" class="cart-bar" data-bs-toggle="offcanvas" data-bs-target="#cartOffcanvas" aria-controls="cartOffcanvas">
+    <span class="d-flex align-items-center gap-2">
+      <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
+      <span id="cart-count-badge">0</span>
+    </span>
+    <span class="d-flex align-items-center gap-3">
+      <span class="tabular" id="cart-total-price">$0.00</span>
+      <span class="cart-bar-cta" data-i18n="btn_view_cart">Haree karreta</span>
+    </span>
+  </button>
+
+  <!-- Item detail -->
+  <div class="modal fade modal-sheet" id="itemCustomModal" tabindex="-1" aria-labelledby="modal-item-name" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content overflow-hidden">
+        <div class="item-modal-media">
+          <img id="modal-item-img" src="{% static 'icons/default-food.png' %}" alt="" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+        </div>
+        <div class="modal-body">
+          <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+            <div class="min-w-0">
+              <h2 class="modal-title" id="modal-item-name"></h2>
+              <div class="price fs-5 mt-1" id="modal-item-price">$0.00</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+          </div>
+          <p class="text-secondary-app fs-7 mb-3" id="modal-item-desc"></p>
+
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <span class="form-label mb-0" data-i18n="quantity_label">Kuantidade</span>
+            <div class="qty-stepper">
+              <button type="button" onclick="adjustModalQty(-1)" aria-label="Hamenus"><i class="fa-solid fa-minus"></i></button>
+              <output id="modal-item-qty" aria-live="polite">1</output>
+              <button type="button" onclick="adjustModalQty(1)" aria-label="Aumenta"><i class="fa-solid fa-plus"></i></button>
+            </div>
+          </div>
+
+          <label for="modal-item-note" class="form-label" data-i18n="item_note_label">Nota ba item ne'e (opsionál)</label>
+          <input type="text" class="form-control mb-3" id="modal-item-note" maxlength="200" placeholder="Ezemplu: la ho ai-manas" data-i18n-placeholder="order_notes_placeholder">
+
+          <button type="button" class="btn btn-primary btn-lg w-100" id="btn-add-modal-item">
+            <span data-i18n="add_to_cart_btn">Aumenta ba karreta</span>
+            <span class="tabular" id="modal-item-total"></span>
+          </button>
+        </div>
+      </div>
     </div>
-    <span class="badge bg-warning text-dark fw-bold px-2 py-1 rounded-pill" id="cart-count-badge">0 Item</span>
   </div>
-  <div class="d-flex align-items-center gap-3">
-    <span class="fs-5 fw-bold text-white" id="cart-total-price">$0.00</span>
-    <span class="btn btn-sm btn-warning text-dark rounded-pill px-3 fw-bold shadow-sm" data-i18n="btn_view_order">Haree Pedidu →</span>
-  </div>
-</div>
 
-<!-- Item Customization Modal (Dark Glassmorphic) -->
-<div class="modal fade" id="itemCustomModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content overflow-hidden border-warning border-opacity-40">
-      
-      <!-- Modal Food Image Preview -->
-      <img id="modal-item-img" src="" class="w-100" style="height: 220px; object-fit: cover; display: none;" alt="Menu Image" onerror="this.src='/static/icons/default-food.png';">
+  <!-- Cart -->
+  <div class="offcanvas offcanvas-end offcanvas-sheet" tabindex="-1" id="cartOffcanvas" aria-labelledby="cartTitle">
+    <div class="sheet-handle d-sm-none" aria-hidden="true"></div>
+    <div class="offcanvas-header">
+      <h2 class="offcanvas-title fs-6 fw-bold d-flex align-items-center gap-2" id="cartTitle">
+        <span data-i18n="cart_title">Karreta</span>
+        <span class="table-chip">{{ table.table_code }}</span>
+      </h2>
+      <div class="d-flex align-items-center gap-1">
+        <button type="button" class="btn btn-sm btn-ghost text-danger" id="btn-clear-cart" onclick="customerApp.clearCartWithConfirm()" hidden><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span data-i18n="clear_cart">Hamos hotu</span></button>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Taka"></button>
+      </div>
+    </div>
+    <div class="offcanvas-body d-flex flex-column">
+      <div id="cart-items-list" class="flex-grow-1"></div>
 
-      <div class="modal-body p-4 pt-3">
-        <div class="d-flex justify-content-between align-items-start mb-2">
-          <div>
-            <h5 class="fw-bold mb-1 text-white" id="modal-item-name">Naran Menu</h5>
-            <div class="text-warning fw-bold fs-4" id="modal-item-price">$0.00</div>
-          </div>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      <div class="border-top pt-3 mt-2" id="cart-footer">
+        <label for="order-customer-note" class="form-label" data-i18n="order_notes_label">Nota ba kaixa / dapur</label>
+        <textarea class="form-control mb-3" id="order-customer-note" rows="2" maxlength="300" placeholder="Ezemplu: hahan hotu mai hamutuk" data-i18n-placeholder="order_notes_placeholder"></textarea>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="text-secondary-app" data-i18n="estimated_total">Totál estimadu</span>
+          <span class="price fs-5" id="cart-drawer-total">$0.00</span>
         </div>
+        <p class="fs-7 text-tertiary mb-3"><i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i><span data-i18n="gatekeeper_warning">Kaixa sei verifika pedidu molok dapur hahu tein.</span></p>
 
-        <p class="text-white-50 small mb-3" id="modal-item-desc"></p>
-
-        <!-- Quantity Selector in Dark Glass -->
-        <div class="mb-3 p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-40">
-          <label class="form-label small fw-bold text-white-50 mb-2" data-i18n="quantity_label">Kuantidade:</label>
-          <div class="d-flex align-items-center gap-3">
-            <button class="btn btn-outline-light rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;" onclick="adjustModalQty(-1)">
-              <i class="fa-solid fa-minus"></i>
-            </button>
-            <span class="fs-3 fw-bold text-white px-3" id="modal-item-qty">1</span>
-            <button class="btn btn-outline-warning rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;" onclick="adjustModalQty(1)">
-              <i class="fa-solid fa-plus"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="mb-3">
-          <label for="modal-item-note" class="form-label small fw-bold text-white-50" data-i18n="order_notes_label">Notasaun ba Meza / Dapur:</label>
-          <input type="text" class="form-control" id="modal-item-note" placeholder="Ezemplu: Lalika tau pimenta, kuah haketak..." data-i18n-placeholder="order_notes_placeholder">
-        </div>
-
-        <button type="button" class="btn btn-warning text-dark w-100 py-3 rounded-pill fw-bold shadow" id="btn-add-modal-item">
-          <i class="fa-solid fa-plus me-1"></i> <span data-i18n="add_to_cart_btn">Aumenta ba Karreta</span>
+        <button type="button" class="btn btn-primary btn-lg w-100" id="btn-submit-order" onclick="customerApp.submitOrder()">
+          <i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span data-i18n="btn_submit_order">Haruka pedidu</span>
         </button>
       </div>
     </div>
   </div>
-</div>
-
-<!-- Cart Offcanvas Drawer (Dark Glassmorphic Dynamic Size) -->
-<div class="offcanvas offcanvas-bottom" tabindex="-1" id="cartOffcanvas" style="max-height: 85vh; height: min(85vh, 640px);">
-  <div class="offcanvas-header px-3 px-sm-4 py-2 border-bottom border-white border-opacity-10 d-flex align-items-center justify-content-between">
-    <div class="d-flex align-items-center flex-grow-1 min-w-0 me-2">
-      <i class="fa-solid fa-basket-shopping text-warning me-2 flex-shrink-0"></i>
-      <h5 class="offcanvas-title fw-bold text-white mb-0 fs-6 text-truncate" data-i18n="cart_title">Karreta Pedidu</h5>
-      <span class="badge bg-warning text-dark fw-bold ms-2 px-2 py-0.5 rounded-pill shadow-sm flex-shrink-0" style="font-size: 0.75rem;">{{ table.table_code }}</span>
-    </div>
-    <div class="d-flex align-items-center gap-1.5 ms-auto flex-shrink-0">
-      <button type="button" class="btn btn-sm btn-outline-danger border-opacity-50 text-danger rounded-pill px-2.5 py-1 d-flex align-items-center shadow-sm" id="btn-clear-cart" onclick="customerApp.clearCartWithConfirm()" title="Hamos Hotu" style="display:none; font-size:0.75rem;">
-        <i class="fa-solid fa-trash-can me-1 small"></i><span data-i18n="clear_cart">Hotu</span>
-      </button>
-      <button type="button" class="btn-close btn-close-white ms-1" data-bs-dismiss="offcanvas" aria-label="Close" style="padding: 0.35rem;"></button>
-    </div>
-  </div>
-  <div class="offcanvas-body d-flex flex-column px-3 px-sm-4 py-2">
-    <div id="cart-items-list" class="flex-grow-1 overflow-auto pe-1"></div>
-
-    <div class="border-top border-white border-opacity-10 pt-2.5 mt-2">
-      <div class="mb-2">
-        <label for="order-customer-note" class="form-label small fw-bold text-white-50 mb-1" style="font-size: 0.75rem;" data-i18n="order_notes_label">Notasaun ba Meza / Dapur:</label>
-        <textarea class="form-control form-control-sm" id="order-customer-note" rows="1" placeholder="Ezemplu: Lalika tau pimenta, kuah haketak..." data-i18n-placeholder="order_notes_placeholder" style="font-size: 0.8rem;"></textarea>
-      </div>
-
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="text-white-50 small" data-i18n="estimated_total">Totál Estimadu:</span>
-        <span class="fs-4 fw-bold text-warning" id="cart-drawer-total">$0.00</span>
-      </div>
-
-      <div class="p-1.5 px-2 mb-2 bg-warning bg-opacity-10 border border-warning border-opacity-30 text-warning rounded-2 small d-flex align-items-center" style="font-size: 0.74rem; line-height: 1.25;" data-i18n="gatekeeper_warning">
-        <i class="fa-solid fa-shield-halved me-1.5 text-warning flex-shrink-0"></i>
-        <span>Pedidu sei hetan verifikasaun uluk hosi Kaixa molok tein iha dapur.</span>
-      </div>
-
-      <button class="btn btn-warning text-dark w-100 py-2.5 rounded-pill fw-bold fs-6 shadow" id="btn-submit-order" onclick="customerApp.submitOrder()" data-i18n="btn_submit_order">
-        <i class="fa-solid fa-paper-plane me-1"></i> Haruka Pedidu ba Kaixa
-      </button>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="{% static 'js/customer.js' %}"></script>
 <script>
-  let currentModalItem = null;
-  let modalQty = 1;
-
   const customerApp = new CustomerApp({
-    sessionToken: "{{ session.public_token|default:'' }}",
-    qrToken: "{{ qr_token|default:'' }}",
-    tableCode: "{{ table.table_code|default:'' }}",
-    tableName: "{{ table.compact_name|default:table.display_name|escapejs }}",
-  });
-
-  function openItemModal(id, name, price, image, desc) {
-    currentModalItem = { id, name, price, image };
-    modalQty = 1;
-    document.getElementById('modal-item-name').textContent = name;
-    document.getElementById('modal-item-price').textContent = `$${parseFloat(price).toFixed(2)}`;
-    document.getElementById('modal-item-desc').textContent = desc || '';
-    document.getElementById('modal-item-qty').textContent = modalQty;
-    document.getElementById('modal-item-note').value = '';
-
-    const modalImg = document.getElementById('modal-item-img');
-    if (modalImg) {
-      if (image && image !== '/static/icons/default-food.png') {
-        modalImg.src = image;
-        modalImg.style.display = 'block';
-      } else {
-        modalImg.src = '/static/icons/default-food.png';
-        modalImg.style.display = 'block';
-      }
-    }
-
-    const modalEl = document.getElementById('itemCustomModal');
-    if (modalEl) {
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      modal.show();
-    }
-  }
-
-  function adjustModalQty(delta) {
-    modalQty = Math.max(1, modalQty + delta);
-    document.getElementById('modal-item-qty').textContent = modalQty;
-  }
-
-  document.getElementById('btn-add-modal-item').addEventListener('click', () => {
-    if (currentModalItem) {
-      const note = document.getElementById('modal-item-note').value.trim();
-      customerApp.addToCart(currentModalItem, modalQty, note);
-      const modalEl = document.getElementById('itemCustomModal');
-      if (modalEl) {
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-      }
-    }
+    sessionToken: "{{ session.public_token|default:''|escapejs }}",
+    sessionActive: {% if session and session.is_active %}true{% else %}false{% endif %},
+    qrToken: "{{ qr_token|default:''|escapejs }}",
+    tableCode: "{{ table.table_code|escapejs }}",
+    tableName: "{{ table.compact_name|escapejs }}",
+    defaultImage: "{% static 'icons/default-food.png' %}",
   });
 </script>
 {% endblock %}

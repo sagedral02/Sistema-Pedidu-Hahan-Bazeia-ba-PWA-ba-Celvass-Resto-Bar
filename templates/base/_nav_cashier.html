@@ -1,0 +1,21 @@
+<header class="app-topbar">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="{% url 'cashier-portal' %}">
+      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-cash-register"></i></span>
+      <span class="min-w-0">
+        <span class="app-brand-text d-block">{{ current_restaurant.name }}</span>
+        <span class="app-brand-sub" data-i18n="role_cashier_portal">Kaixa</span>
+      </span>
+    </a>
+    <nav class="app-nav" aria-label="Navegasaun kaixa">
+      <button type="button" class="app-nav-link" data-panel="pos-panel"><i class="fa-solid fa-cash-register" aria-hidden="true"></i><span data-i18n="live_pos">POS &amp; Fila</span><span class="nav-count" data-count-for="pending"></span></button>
+      <button type="button" class="app-nav-link" data-panel="bill-alerts-panel"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span data-i18n="bill_alerts">Husu Konta</span><span class="nav-count" data-count-for="bills"></span></button>
+      <button type="button" class="app-nav-link" data-panel="orders-history-panel"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span data-i18n="order_history">Istóriku</span></button>
+      <button type="button" class="app-nav-link" data-panel="shift-close-panel"><i class="fa-solid fa-vault" aria-hidden="true"></i><span data-i18n="shift_close">Fechu Kaixa</span></button>
+    </nav>
+    <div class="app-topbar-actions">
+      <button type="button" class="icon-btn" onclick="cashierApp.refreshAll()" aria-label="Atualiza" data-i18n-title="refresh" title="Atualiza"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+      {% include 'base/_account_menu.html' %}
+    </div>
+  </div>
+</header>

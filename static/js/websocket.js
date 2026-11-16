@@ -66,10 +66,11 @@ class WebSocketClient {
   }
 
   updateNetworkIndicator(online) {
-    const indicator = document.getElementById('ws-network-status');
-    if (indicator) {
-      indicator.className = online ? 'badge bg-success' : 'badge bg-warning text-dark';
-      indicator.textContent = online ? '● Live' : '○ Polling Fallback';
-    }
+    document.querySelectorAll('[data-ws-status]').forEach((el) => {
+      el.classList.toggle('tone-success', online);
+      el.classList.toggle('tone-warning', !online);
+      const label = el.querySelector('[data-ws-label]');
+      if (label && typeof t === 'function') label.textContent = online ? t('live') : t('polling');
+    });
   }
 }

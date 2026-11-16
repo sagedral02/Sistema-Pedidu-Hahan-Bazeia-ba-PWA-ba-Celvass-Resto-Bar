@@ -1,261 +1,40 @@
 {% extends 'base/base.html' %}
 {% load static %}
 
-{% block title %}Celvass Resto & Bar — Dine-In Digital{% endblock %}
-
-{% block body_class %}landing-page{% endblock %}
+{% block title %}{{ current_restaurant.name }}{% endblock %}
+{% block topbar %}{% endblock %}
+{% block main_class %}p-0{% endblock %}
 
 {% block content %}
-<div class="landing-hero">
-  <div class="landing-bg-overlay"></div>
-  <div class="landing-content">
-    
-    <!-- Logo & Brand -->
-    <div class="landing-brand">
-      <div class="landing-logo-ring">
-        <i class="fa-solid fa-utensils"></i>
-      </div>
-      <h1 class="landing-title">Celvass Resto & Bar</h1>
-      <p class="landing-tagline" data-i18n="landing_tagline">Esperiénsia gastronómika modernu iha tasi-ibun Dili</p>
+<div class="standalone">
+  <div class="standalone-card">
+    <div class="standalone-top">
+      <span class="app-brand">
+        <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+        <span class="app-brand-text">{{ current_restaurant.name }}</span>
+      </span>
+      {% include 'base/_lang_menu.html' %}
     </div>
 
-    <!-- QR Instruction Card -->
-    <div class="landing-qr-card">
-      <div class="qr-card-icon">
-        <i class="fa-solid fa-qrcode"></i>
-      </div>
-      <h2 class="qr-card-title" data-i18n="scan_qr_prompt">Buka QR Code iha ita nia Meza</h2>
-      <p class="qr-card-desc" data-i18n="scan_qr_desc">
-        Atu halo pedidu, favor <strong>skanu QR Code</strong> ne'ebé iha ita nia meza ho kamera ita nia telefone.
-        QR Code ne'e mak sei abre menu no permite ita halo pedidu direitamente.
-      </p>
-      <div class="qr-steps">
-        <div class="qr-step">
-          <div class="step-num">1</div>
-          <span data-i18n="step_1">Loke kamera ita nia telefone</span>
-        </div>
-        <div class="qr-step">
-          <div class="step-num">2</div>
-          <span data-i18n="step_2">Aponta ba QR Code iha meza</span>
-        </div>
-        <div class="qr-step">
-          <div class="step-num">3</div>
-          <span data-i18n="step_3">Tama menu no halo pedidu!</span>
-        </div>
-      </div>
+    <div class="standalone-icon" aria-hidden="true"><i class="fa-solid fa-qrcode"></i></div>
+    <h1 class="standalone-title" data-i18n="scan_qr_prompt">Skanu QR Code iha ita-nia meza</h1>
+    <p class="standalone-text" data-i18n="scan_qr_desc">Atu halo pedidu, skanu QR Code ne'ebé iha ita-nia meza ho kamera telemóvel.</p>
+
+    <ol class="steps">
+      <li data-i18n="step_1">Loke kamera telemóvel</li>
+      <li data-i18n="step_2">Aponta ba QR Code iha meza</li>
+      <li data-i18n="step_3">Hili menu no haruka pedidu</li>
+    </ol>
+
+    <div class="callout tone-info">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <div data-i18n="landing_cashier_hint">Kaixa sei verifika pedidu ida-idak molok dapur hahu tein.</div>
     </div>
 
-    <!-- PWA Install Prompt -->
-    <div id="pwa-landing-install" style="display:none;" class="landing-pwa-bar">
-      <i class="fa-solid fa-mobile-screen-button"></i>
-      <span data-i18n="install_pwa_fast">Instala Celvass App ba aksesu lais</span>
-      <button onclick="installPWA()" class="landing-pwa-btn">
-        <i class="fa-solid fa-download me-1"></i><span data-i18n="install_app">Instala</span>
-      </button>
-    </div>
-
-    <!-- Staff login link (subtle) -->
-    <div class="landing-staff-link">
-      <a href="{% url 'login' %}">
-        <i class="fa-solid fa-shield-halved me-1"></i><span data-i18n="login_staff">Portal Staff</span>
-      </a>
+    <div class="standalone-footer">
+      <span>{{ current_restaurant.address|default:"Praia dos Coqueiros, Dili" }}</span>
+      <a href="{% url 'login' %}"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i><span data-i18n="staff_portal">Portal Staff</span></a>
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_css %}
-<style>
-  body.landing-page {
-    background: #0a0a0a;
-    overflow-x: hidden;
-  }
-  body.landing-page nav.navbar-custom,
-  body.landing-page .mobile-bottom-dock {
-    display: none !important;
-  }
-  body.landing-page #pwa-install-banner {
-    display: none !important;
-  }
-
-  .landing-hero {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    background: linear-gradient(135deg, #090500 0%, #150900 35%, #070e1c 100%);
-    overflow: hidden;
-  }
-  .landing-hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: 
-      radial-gradient(ellipse at 20% 50%, rgba(249,115,22,0.15) 0%, transparent 60%),
-      radial-gradient(ellipse at 80% 20%, rgba(234,179,8,0.10) 0%, transparent 50%),
-      radial-gradient(ellipse at 60% 80%, rgba(14,165,233,0.08) 0%, transparent 50%);
-    pointer-events: none;
-  }
-
-  .landing-content {
-    position: relative;
-    z-index: 2;
-    width: 100%;
-    max-width: 520px;
-    margin: 0 auto;
-    padding: 2rem 1.5rem;
-    text-align: center;
-  }
-
-  .landing-brand {
-    margin-bottom: 2rem;
-  }
-  .landing-logo-ring {
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f97316, #eab308);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2.2rem;
-    color: #fff;
-    margin: 0 auto 1.2rem;
-    border: 2px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  }
-  .landing-title {
-    font-family: 'Outfit', sans-serif;
-    font-size: 2rem;
-    font-weight: 800;
-    color: #ffffff;
-    margin-bottom: 0.4rem;
-    letter-spacing: -0.5px;
-  }
-  .landing-tagline {
-    color: rgba(255,255,255,0.5);
-    font-size: 0.9rem;
-    margin: 0;
-  }
-
-  .landing-qr-card {
-    background: rgba(255,255,255,0.05);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 24px;
-    padding: 2rem 1.8rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 25px 60px rgba(0,0,0,0.4);
-  }
-  .qr-card-icon {
-    font-size: 3.5rem;
-    color: #f97316;
-    margin-bottom: 1rem;
-    animation: qr-bob 3s ease-in-out infinite;
-  }
-  @keyframes qr-bob {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-  }
-  .qr-card-title {
-    font-family: 'Outfit', sans-serif;
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: 0.8rem;
-  }
-  .qr-card-desc {
-    color: rgba(255,255,255,0.65);
-    font-size: 0.92rem;
-    line-height: 1.6;
-    margin-bottom: 1.5rem;
-  }
-  .qr-steps {
-    display: flex;
-    gap: 0.8rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-  .qr-step {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: rgba(249,115,22,0.12);
-    border: 1px solid rgba(249,115,22,0.25);
-    border-radius: 50px;
-    padding: 0.4rem 0.9rem 0.4rem 0.4rem;
-    color: rgba(255,255,255,0.85);
-    font-size: 0.82rem;
-  }
-  .step-num {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f97316, #ea580c);
-    color: #fff;
-    font-weight: 700;
-    font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .landing-pwa-bar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.8rem;
-    background: rgba(234,179,8,0.12);
-    border: 1px solid rgba(234,179,8,0.3);
-    border-radius: 50px;
-    padding: 0.7rem 1.2rem;
-    margin-bottom: 1.2rem;
-    color: #eab308;
-    font-size: 0.88rem;
-  }
-  .landing-pwa-btn {
-    background: #eab308;
-    color: #000;
-    border: none;
-    border-radius: 50px;
-    padding: 0.35rem 0.9rem;
-    font-weight: 700;
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .landing-pwa-btn:hover {
-    background: #f59e0b;
-    transform: scale(1.05);
-  }
-
-  .landing-staff-link {
-    margin-top: 1rem;
-  }
-  .landing-staff-link a {
-    color: rgba(255,255,255,0.3);
-    font-size: 0.8rem;
-    text-decoration: none;
-    transition: color 0.2s;
-  }
-  .landing-staff-link a:hover {
-    color: rgba(255,255,255,0.6);
-  }
-</style>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-  // Show PWA install bar if available
-  window.addEventListener('load', () => {
-    if (window._deferredInstallPrompt) {
-      document.getElementById('pwa-landing-install').style.display = 'flex';
-    }
-  });
-  document.addEventListener('pwa-installable', () => {
-    document.getElementById('pwa-landing-install').style.display = 'flex';
-  });
-</script>
 {% endblock %}

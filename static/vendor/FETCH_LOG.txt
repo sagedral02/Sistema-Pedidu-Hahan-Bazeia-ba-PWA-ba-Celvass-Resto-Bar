@@ -1,0 +1,14 @@
+bootstrap/bootstrap.min.css 232803
+bootstrap/bootstrap.bundle.min.js 80721
+fontawesome/css/all.min.css 102641
+fontawesome/webfonts/fa-solid-900.woff2 156496
+fontawesome/webfonts/fa-solid-900.ttf 419720
+fontawesome/webfonts/fa-regular-400.woff2 25452
+fontawesome/webfonts/fa-regular-400.ttf 68004
+fontawesome/webfonts/fa-brands-400.woff2 117372
+fontawesome/webfonts/fa-brands-400.ttf 207972
+fontawesome/webfonts/fa-v4compatibility.woff2 4792
+fontawesome/webfonts/fa-v4compatibility.ttf 10832
+fonts/plus-jakarta-sans-latin-ext.woff2 21728
+fonts/plus-jakarta-sans-latin.woff2 27348
+fonts/plus-jakarta-sans.css 793

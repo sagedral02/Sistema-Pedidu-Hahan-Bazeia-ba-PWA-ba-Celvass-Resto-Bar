@@ -1,0 +1,25 @@
+<div class="dropdown">
+  <button class="icon-btn is-outlined" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Konta" title="{{ user.get_full_name }}">
+    <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+    <span class="d-none d-lg-inline truncate" style="max-width:140px">{{ user.get_full_name }}</span>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end" style="min-width:220px">
+    <li class="px-2 py-1">
+      <div class="fw-bold">{{ user.get_full_name }}</div>
+      <div class="text-tertiary fs-7">{{ user.get_role_display }}</div>
+    </li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-i18n="language">Lian</h6></li>
+    <li><button type="button" class="dropdown-item" data-set-lang="tet">Tetun</button></li>
+    <li><button type="button" class="dropdown-item" data-set-lang="pt">Português</button></li>
+    <li><button type="button" class="dropdown-item" data-set-lang="en">English</button></li>
+    <li><button type="button" class="dropdown-item" data-set-lang="id">Bahasa Indonesia</button></li>
+    <li><hr class="dropdown-divider"></li>
+    <li>
+      <a class="dropdown-item text-danger" href="{% url 'logout' %}" data-logout>
+        <i class="fa-solid fa-arrow-right-from-bracket text-danger" aria-hidden="true"></i>
+        <span data-i18n="logout">Sai</span>
+      </a>
+    </li>
+  </ul>
+</div>

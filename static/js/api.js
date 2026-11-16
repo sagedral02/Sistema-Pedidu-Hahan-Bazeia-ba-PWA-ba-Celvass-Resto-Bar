@@ -1,6 +1,5 @@
 /**
- * Central API Client with CSRF, error normalization, dynamic i18n translation,
- * and dark glassmorphic toast notifications.
+ * API client (CSRF, error normalisation, i18n error codes) and toast notifications.
  */
 
 function getCsrfToken() {
@@ -11,111 +10,79 @@ function getCsrfToken() {
   return cookieValue || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
 }
 
+const TOAST_ICONS = {
+  success: 'fa-circle-check',
+  error: 'fa-circle-exclamation',
+  warning: 'fa-triangle-exclamation',
+  info: 'fa-circle-info',
+};
+
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
-  const styleConfig = {
-    success: {
-      border: 'rgba(16, 185, 129, 0.4)',
-      bg: 'linear-gradient(135deg, rgba(6, 78, 59, 0.95), rgba(15, 23, 42, 0.95))',
-      color: '#a7f3d0',
-      icon: 'fa-circle-check text-success'
-    },
-    error: {
-      border: 'rgba(239, 68, 68, 0.4)',
-      bg: 'linear-gradient(135deg, rgba(127, 29, 29, 0.95), rgba(15, 23, 42, 0.95))',
-      color: '#fecaca',
-      icon: 'fa-circle-exclamation text-danger'
-    },
-    warning: {
-      border: 'rgba(245, 158, 11, 0.4)',
-      bg: 'linear-gradient(135deg, rgba(120, 53, 15, 0.95), rgba(15, 23, 42, 0.95))',
-      color: '#fef3c7',
-      icon: 'fa-triangle-exclamation text-warning'
-    },
-    info: {
-      border: 'rgba(14, 165, 233, 0.4)',
-      bg: 'linear-gradient(135deg, rgba(12, 74, 110, 0.95), rgba(15, 23, 42, 0.95))',
-      color: '#bae6fd',
-      icon: 'fa-circle-info text-info'
-    },
-  }[type] || {
-    border: 'rgba(255, 255, 255, 0.15)',
-    bg: 'rgba(15, 23, 42, 0.95)',
-    color: '#ffffff',
-    icon: 'fa-bell text-warning'
-  };
-
+  const tone = TOAST_ICONS[type] ? type : 'info';
   const toastEl = document.createElement('div');
-  toastEl.className = 'toast align-items-center border-0 show mb-2';
-  toastEl.style.cssText = `
-    background: ${styleConfig.bg} !important;
-    border: 1px solid ${styleConfig.border} !important;
-    border-radius: 16px !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    box-shadow: 0 16px 36px rgba(0,0,0,0.5) !important;
-    color: ${styleConfig.color} !important;
-  `;
-  toastEl.setAttribute('role', 'alert');
-  toastEl.setAttribute('aria-live', 'assertive');
-  toastEl.setAttribute('aria-atomic', 'true');
-  toastEl.innerHTML = `
-    <div class="d-flex align-items-center p-2 px-3">
-      <i class="fa-solid ${styleConfig.icon} me-2 fs-5"></i>
-      <div class="toast-body fw-semibold py-1 pe-2" style="font-family: 'Outfit', sans-serif;">
-        ${message}
-      </div>
-      <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="toast" aria-label="Taka"></button>
-    </div>
-  `;
+  toastEl.className = `app-toast tone-${tone}`;
+  toastEl.setAttribute('role', tone === 'error' ? 'alert' : 'status');
 
+  const icon = document.createElement('i');
+  icon.className = `fa-solid ${TOAST_ICONS[tone]}`;
+  icon.setAttribute('aria-hidden', 'true');
+
+  const body = document.createElement('div');
+  body.className = 'app-toast-body';
+  body.textContent = String(message ?? '');
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn-close';
+  close.setAttribute('aria-label', typeof t === 'function' ? t('close') : 'Taka');
+
+  const remove = () => {
+    toastEl.classList.add('is-leaving');
+    setTimeout(() => toastEl.remove(), 200);
+  };
+  close.addEventListener('click', remove);
+
+  toastEl.append(icon, body, close);
   container.appendChild(toastEl);
-  setTimeout(() => {
-    toastEl.classList.remove('show');
-    setTimeout(() => toastEl.remove(), 350);
-  }, 4200);
+
+  while (container.children.length > 4) container.firstElementChild.remove();
+  setTimeout(remove, tone === 'error' ? 6000 : 4000);
 }
 
 async function apiRequest(endpoint, options = {}) {
+  const isForm = options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
     'X-CSRFToken': getCsrfToken(),
     ...(options.headers || {}),
   };
 
+  const response = await fetch(endpoint, { credentials: 'same-origin', ...options, headers });
+  const text = await response.text();
+  let data = null;
   try {
-    const response = await fetch(endpoint, {
-      ...options,
-      headers,
-    });
-
-    const text = await response.text();
-    let data = null;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      if (!response.ok) {
-        throw new Error(`Server returned error status ${response.status}`);
-      }
-      throw new Error('Server returned unexpected response format.');
-    }
-
-    if (!response.ok || data.success === false) {
-      const code = data?.error?.code;
-      // If translation key exists for this error code, use it
-      let localizedMsg = (typeof t === 'function' && code && t(code)) ? t(code) : null;
-      if (!localizedMsg) {
-        localizedMsg = data?.error?.message || (typeof t === 'function' ? t('error_request_failed') : 'Pedidu falla atu prosesa.');
-      }
-      throw new Error(localizedMsg);
-    }
-    return data.data !== undefined ? data.data : data;
-  } catch (err) {
-    console.error(`API Error [${endpoint}]:`, err);
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    const err = new Error(typeof t === 'function' ? t('error_request_failed') : 'Pedidu falla atu prosesa.');
+    err.status = response.status;
     throw err;
   }
+
+  if (!response.ok || data.success === false) {
+    const code = data?.error?.code;
+    const translated = typeof t === 'function' && code && t(code) !== code ? t(code) : null;
+    const message = data?.error?.message || translated || (typeof t === 'function' ? t('error_request_failed') : 'Pedidu falla atu prosesa.');
+    // Prefer the server message for business validation, translated text for generic codes.
+    const preferTranslated = ['DEVICE_LOCKED', 'SERVER_ERROR', 'TABLE_SESSION_NOT_OPEN', 'IDEMPOTENCY_KEY_REQUIRED'].includes(code);
+    const err = new Error(preferTranslated && translated ? translated : message);
+    err.code = code;
+    err.status = response.status;
+    throw err;
+  }
+  return data.data !== undefined ? data.data : data;
 }
 
 async function apiGet(endpoint) {
