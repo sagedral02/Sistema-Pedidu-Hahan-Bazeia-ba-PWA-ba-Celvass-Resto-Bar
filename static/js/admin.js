@@ -17,6 +17,12 @@
     }, 500);
   }
 
+  // Any busy button inside a modal is restored when that modal opens again, so a form can
+  // never stay disabled after a previous save.
+  document.addEventListener('show.bs.modal', (e) => {
+    e.target.querySelectorAll('button[data-label]').forEach((b) => setBusy(b, false));
+  });
+
   function setBusy(btn, busy) {
     if (!btn) return;
     if (busy) {
@@ -26,6 +32,7 @@
     } else {
       btn.disabled = false;
       if (btn.dataset.label) btn.innerHTML = btn.dataset.label;
+      delete btn.dataset.label;
     }
   }
 
@@ -342,43 +349,330 @@
     try {
       await apiPost(`/api/v1/admin/tables/${tableId}/rotate-qr/`);
       showToast(t('rotate_qr_success'), 'success');
-      reloadSoon('#tables-panel');
+      await refreshTablesPanel();
     } catch (e) {
       showToast(e.message, 'error');
     }
   }
 
-  async function submitCreateStaffUser() {
-    const username = $('new-user-username').value.trim();
-    const password = $('new-user-password').value;
-    if (!username || !password) {
-      showToast(t('validation_user_pass_required'), 'warning');
-      return;
-    }
-    if (password.length < 8) {
-      showToast(t('password_hint'), 'warning');
-      return;
-    }
-    const btn = $('btn-create-user');
-    setBusy(btn, true);
+  const TABLE_STATUS_KEYS = {
+    AVAILABLE: 'table_status_available',
+    OCCUPIED: 'table_status_occupied',
+    CLEANING: 'table_status_unavailable',
+    MAINTENANCE: 'table_status_unavailable',
+  };
+
+  function renderTableRow(tbl) {
+    const id = escapeHtml(tbl.id);
+    const name = escapeHtml(tbl.display_name);
+    const L = (k) => escapeHtml(t(k));
+    const status = tbl.status === 'AVAILABLE' ? 'available' : tbl.status === 'OCCUPIED' ? 'occupied' : 'maintenance';
+    const openLinks = tbl.is_active
+      ? `<a class="btn btn-sm btn-ghost btn-icon" href="/t/${encodeURIComponent(tbl.qr_token)}/" target="_blank" rel="noopener" aria-label="${L('open_table_menu')}" title="${L('open_table_menu')}"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+         <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="rotateTableQR('${id}', this.dataset.name)" data-name="${name}" aria-label="${L('btn_rotate_qr')}" title="${L('btn_rotate_qr')}"><i class="fa-solid fa-arrows-rotate"></i></button>`
+      : '';
+    return `
+      <tr${tbl.is_active ? '' : ' class="opacity-75"'}>
+        <td class="cell-primary">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="min-w-0">
+              <div class="fw-bold">${name}</div>
+              <div class="fs-8 text-tertiary">${escapeHtml(tbl.table_code)}${tbl.sort_order ? ` &middot; ${L('category_sort')} ${escapeHtml(tbl.sort_order)}` : ''}</div>
+            </div>
+            ${tbl.is_active ? '' : `<span class="badge-soft">${L('category_inactive')}</span>`}
+          </div>
+        </td>
+        <td data-label="${L('th_capacity')}" data-i18n-label="th_capacity" class="tabular">${tbl.capacity ? escapeHtml(tbl.capacity) : '-'}</td>
+        <td data-label="${L('th_current_status')}" data-i18n-label="th_current_status">
+          <span class="status status-${status}">${L(TABLE_STATUS_KEYS[tbl.status] || 'status')}</span>
+          ${tbl.has_active_session ? `<span class="badge-soft tone-info ms-1">${L('active_session')}</span>` : ''}
+        </td>
+        <td data-label="QR" data-i18n-label="th_qr_token"><span class="code-text">${escapeHtml(String(tbl.qr_token).slice(0, 12))}…</span></td>
+        <td class="cell-actions text-end">
+          <div class="d-inline-flex gap-1 flex-wrap justify-content-end">
+            ${openLinks}
+            <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditTableModal('${id}')" aria-label="${L('btn_edit_table')}" title="${L('btn_edit_table')}"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteTable('${id}', this.dataset.name, ${tbl.has_active_session ? 'true' : 'false'}, ${Number(tbl.sessions_count) || 0})" data-name="${name}" aria-label="${L('btn_delete_table')}" title="${L('btn_delete_table')}"${tbl.has_active_session ? ' disabled' : ''}><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  async function refreshTablesPanel() {
+    const tbody = $('admin-tables-tbody');
+    if (!tbody) return;
     try {
-      await apiPost('/api/v1/admin/users/create/', {
-        username,
-        password,
-        role: $('new-user-role').value,
-        first_name: $('new-user-fullname').value.trim(),
-      });
-      showToast(t('user_created_success').replace('{name}', username), 'success');
-      modal('createUserModal').hide();
-      reloadSoon('#users-panel');
+      const tables = (await apiGet('/api/v1/admin/tables/')) || [];
+      tbody.innerHTML = tables.length
+        ? tables.map(renderTableRow).join('')
+        : `<tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-chair" aria-hidden="true"></i><div>${escapeHtml(t('no_tables_found'))}</div></div></td></tr>`;
+    } catch (e) {
+      // Fall back to a full reload so the list is never left stale.
+      reloadSoon('#tables-panel');
+    }
+  }
+
+  function fillTableForm(tbl) {
+    $('table-id').value = tbl?.id || '';
+    $('table-form-code').value = tbl?.table_code || '';
+    $('table-form-name').value = tbl?.display_name || '';
+    $('table-form-capacity').value = tbl?.capacity ?? '';
+    $('table-form-sort').value = tbl?.sort_order ?? 0;
+    $('table-form-active').checked = tbl ? Boolean(tbl.is_active) : true;
+
+    const status = $('table-form-status');
+    const busy = Boolean(tbl?.has_active_session);
+    status.value = tbl && (tbl.status === 'MAINTENANCE' || tbl.status === 'CLEANING') ? 'MAINTENANCE' : 'AVAILABLE';
+    status.disabled = busy;
+    $('table-form-active').disabled = busy;
+    $('table-form-status-hint').textContent = busy ? t('table_busy_hint') : t('table_status_hint');
+    document.querySelectorAll('#table-form .is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+  }
+
+  function openCreateTableModal() {
+    $('table-modal-title').textContent = t('btn_add_table');
+    fillTableForm(null);
+    modal('tableModal').show();
+  }
+
+  async function openEditTableModal(tableId) {
+    try {
+      const tbl = await apiGet(`/api/v1/admin/tables/${tableId}/`);
+      $('table-modal-title').textContent = `${t('btn_edit_table')}: ${tbl.display_name}`;
+      fillTableForm(tbl);
+      modal('tableModal').show();
     } catch (e) {
       showToast(e.message, 'error');
+    }
+  }
+
+  async function submitTableForm() {
+    const tableId = $('table-id').value;
+    const code = $('table-form-code').value.trim().toUpperCase();
+    const name = $('table-form-name').value.trim();
+    const capRaw = $('table-form-capacity').value.trim();
+    const cap = capRaw === '' ? null : parseInt(capRaw, 10);
+
+    const invalid = [];
+    if (!code) invalid.push('table-form-code');
+    if (!name) invalid.push('table-form-name');
+    if (cap !== null && (!Number.isInteger(cap) || cap < 1 || cap > 50)) invalid.push('table-form-capacity');
+    document.querySelectorAll('#table-form .is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    if (invalid.length) {
+      invalid.forEach((id) => $(id).classList.add('is-invalid'));
+      $(invalid[0]).focus();
+      showToast(invalid.includes('table-form-capacity') && invalid.length === 1 ? t('table_capacity_hint') : t('validation_required'), 'warning');
+      return;
+    }
+
+    const payload = {
+      table_code: code,
+      display_name: name,
+      capacity: cap,
+      sort_order: parseInt($('table-form-sort').value || '0', 10),
+    };
+    if (!$('table-form-active').disabled) payload.is_active = $('table-form-active').checked;
+    if (!$('table-form-status').disabled) payload.status = $('table-form-status').value;
+
+    const btn = $('btn-save-table');
+    setBusy(btn, true);
+    try {
+      await apiRequest(tableId ? `/api/v1/admin/tables/${tableId}/` : '/api/v1/admin/tables/', {
+        method: tableId ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      showToast(tableId ? t('table_updated_success') : t('table_created_success'), 'success');
+      modal('tableModal').hide();
+      await refreshTablesPanel();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
       setBusy(btn, false);
     }
   }
 
-  // Restore the last category filter
+  async function confirmDeleteTable(tableId, tableName, hasActiveSession, sessionsCount) {
+    if (hasActiveSession) {
+      showToast(t('table_busy_hint'), 'warning');
+      return;
+    }
+    const ok = await confirmDialog({
+      title: `${t('btn_delete_table')} · ${tableName}`,
+      message: sessionsCount > 0 ? t('table_delete_history_msg') : t('table_delete_msg'),
+      confirmText: sessionsCount > 0 ? t('table_deactivate') : t('delete'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      const res = await apiRequest(`/api/v1/admin/tables/${tableId}/`, { method: 'DELETE' });
+      showToast(res.deleted ? t('table_deleted_success') : t('table_deactivated_success'), 'success');
+      await refreshTablesPanel();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Staff
+  // ------------------------------------------------------------------
+  const ROLE_TONE = { ADMIN: 'tone-accent', CASHIER: 'tone-success', KITCHEN: 'tone-info' };
+  const ROLE_KEY = { ADMIN: 'role_admin', CASHIER: 'role_cashier', KITCHEN: 'role_kitchen' };
+
+  function fmtDate(value, withTime) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '-';
+    const p = (n) => String(n).padStart(2, '0');
+    const day = p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear();
+    return withTime ? day + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) : day;
+  }
+
+  function renderStaffRow(u) {
+    const L = (k) => escapeHtml(t(k));
+    const id = escapeHtml(u.id);
+    const name = escapeHtml(u.display_name || u.username);
+    const role = u.is_superuser ? 'ADMIN' : u.role;
+    const locked = u.is_self || u.is_superuser;
+    const you = u.is_self ? ' <span class="badge-soft tone-accent">' + L('you_badge') + '</span>' : '';
+    const status = u.is_active
+      ? '<span class="badge-soft tone-success">' + L('category_active') + '</span>'
+      : '<span class="badge-soft">' + L('category_inactive') + '</span>';
+    return `
+      <tr class="${u.is_active ? '' : 'opacity-75'}">
+        <td class="cell-primary">
+          <div class="fw-bold">${name}${you}</div>
+          <div class="fs-8 text-tertiary">@${escapeHtml(u.username)}</div>
+        </td>
+        <td data-label="${L('label_role')}" data-i18n-label="label_role"><span class="badge-soft ${ROLE_TONE[role] || ''}">${L(ROLE_KEY[role] || 'label_role')}</span></td>
+        <td data-label="${L('status')}" data-i18n-label="status">${status}</td>
+        <td data-label="${L('last_login')}" data-i18n-label="last_login" class="tabular fs-7">${fmtDate(u.last_login, true)}</td>
+        <td data-label="${L('joined')}" data-i18n-label="joined" class="tabular fs-7">${fmtDate(u.created_at)}</td>
+        <td class="cell-actions text-end">
+          <div class="d-inline-flex gap-1">
+            <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditStaffModal('${id}')" aria-label="${L('btn_edit_staff')}" title="${L('btn_edit_staff')}"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteStaff('${id}', this.dataset.name, this.dataset.history === 'true')" data-name="${name}" data-history="${u.has_history ? 'true' : 'false'}" aria-label="${L('btn_delete_staff')}" title="${L('btn_delete_staff')}"${locked ? ' disabled' : ''}><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  async function refreshStaffPanel() {
+    const tbody = $('admin-staff-tbody');
+    if (!tbody) return;
+    try {
+      const users = (await apiGet('/api/v1/admin/users/')) || [];
+      tbody.innerHTML = users.map(renderStaffRow).join('');
+    } catch (e) {
+      reloadSoon('#users-panel');
+    }
+  }
+
+  function fillStaffForm(u) {
+    const editing = Boolean(u);
+    const locked = editing && (u.is_self || u.is_superuser);
+    $('staff-id').value = editing ? u.id : '';
+    $('staff-form-fullname').value = editing ? (u.full_name || '') : '';
+    $('staff-form-username').value = editing ? u.username : '';
+    $('staff-form-password').value = '';
+    $('staff-form-password').type = 'password';
+    $('staff-form-password').required = !editing;
+    $('staff-password-required').hidden = editing;
+    $('staff-form-password-hint').textContent = editing ? t('password_keep_hint') : t('password_hint');
+    $('staff-form-role').value = editing ? (u.is_superuser ? 'ADMIN' : u.role) : 'CASHIER';
+    $('staff-form-role').disabled = locked;
+    $('staff-active-wrap').hidden = !editing;
+    $('staff-form-active').checked = editing ? Boolean(u.is_active) : true;
+    $('staff-form-active').disabled = locked;
+    $('staff-self-hint').hidden = !(editing && u.is_self);
+    document.querySelectorAll('#staff-form .is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+  }
+
+  function openCreateStaffModal() {
+    $('staff-modal-title').textContent = t('modal_create_staff_title');
+    fillStaffForm(null);
+    modal('staffModal').show();
+  }
+
+  async function openEditStaffModal(userId) {
+    try {
+      const u = await apiGet('/api/v1/admin/users/' + encodeURIComponent(userId) + '/');
+      $('staff-modal-title').textContent = t('btn_edit_staff') + ': ' + (u.display_name || u.username);
+      fillStaffForm(u);
+      modal('staffModal').show();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  function toggleStaffPassword(btn) {
+    const input = $('staff-form-password');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    const icon = btn.querySelector('i');
+    icon.classList.toggle('fa-eye', !show);
+    icon.classList.toggle('fa-eye-slash', show);
+  }
+
+  async function submitStaffForm() {
+    const userId = $('staff-id').value;
+    const username = $('staff-form-username').value.trim();
+    const password = $('staff-form-password').value;
+
+    const invalid = [];
+    if (!username) invalid.push('staff-form-username');
+    if ((!userId && !password) || (password && password.length < 8)) invalid.push('staff-form-password');
+    document.querySelectorAll('#staff-form .is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    if (invalid.length) {
+      invalid.forEach((id) => $(id).classList.add('is-invalid'));
+      $(invalid[0]).focus();
+      showToast(invalid[0] === 'staff-form-password' ? t('password_hint') : t('validation_required'), 'warning');
+      return;
+    }
+
+    const payload = { username, full_name: $('staff-form-fullname').value.trim() };
+    if (password) payload.password = password;
+    if (!$('staff-form-role').disabled) payload.role = $('staff-form-role').value;
+    if (userId && !$('staff-form-active').disabled) payload.is_active = $('staff-form-active').checked;
+
+    const btn = $('btn-save-staff');
+    setBusy(btn, true);
+    try {
+      await apiRequest(userId ? '/api/v1/admin/users/' + encodeURIComponent(userId) + '/' : '/api/v1/admin/users/', {
+        method: userId ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      showToast(userId ? t('staff_updated_success') : t('user_created_success').replace('{name}', username), 'success');
+      modal('staffModal').hide();
+      await refreshStaffPanel();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function confirmDeleteStaff(userId, name, hasHistory) {
+    const ok = await confirmDialog({
+      title: t('btn_delete_staff') + ' · ' + name,
+      message: hasHistory ? t('staff_delete_history_msg') : t('staff_delete_msg'),
+      confirmText: hasHistory ? t('table_deactivate') : t('delete'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      const res = await apiRequest('/api/v1/admin/users/' + encodeURIComponent(userId) + '/', { method: 'DELETE' });
+      showToast(res.deleted ? t('staff_deleted_success') : t('staff_deactivated_success'), 'success');
+      await refreshStaffPanel();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // Restore the last category filter and lock delete on tables that are in use
   document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('button[data-busy="true"]').forEach((b) => {
+      b.disabled = true;
+    });
     const saved = sessionStorage.getItem('celvass_admin_active_cat');
     if (saved && document.querySelector(`.admin-cat-pill[data-cat="${CSS.escape(saved)}"]`)) {
       filterAdminMenuByCategory(saved);
@@ -405,6 +699,14 @@
     toggleCategoryStatus,
     confirmDeleteCategory,
     rotateTableQR,
-    submitCreateStaffUser,
+    openCreateTableModal,
+    openEditTableModal,
+    submitTableForm,
+    confirmDeleteTable,
+    openCreateStaffModal,
+    openEditStaffModal,
+    toggleStaffPassword,
+    submitStaffForm,
+    confirmDeleteStaff,
   });
 })();

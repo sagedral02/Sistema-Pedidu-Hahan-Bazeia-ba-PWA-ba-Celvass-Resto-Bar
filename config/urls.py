@@ -6,6 +6,7 @@ from django.conf.urls.static import static
 from apps.accounts import views as auth_views
 from apps.restaurants import views as resto_views
 from apps.pwa import views as pwa_views
+from apps.reporting import views as report_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -28,6 +29,16 @@ urlpatterns = [
     path('kitchen/', resto_views.kitchen_portal_view, name='kitchen-portal'),
     path('admin-portal/', resto_views.admin_portal_view, name='admin-portal'),
     path('admin-portal/qr-sheet/', resto_views.qr_print_sheet_view, name='admin-qr-sheet'),
+
+    # Reports (Admin and Cashier)
+    path('reports/', report_views.reports_page_view, name='reports'),
+    path('reports/data/', report_views.report_data_view, name='reports-data'),
+    path('reports/export/', report_views.report_export_view, name='reports-export'),
+    path('reports/history/orders/', report_views.history_orders_view, name='reports-history-orders'),
+    path('reports/history/transactions/', report_views.history_transactions_view, name='reports-history-transactions'),
+    path('reports/history/orders/<str:order_id>/', report_views.history_order_detail_view, name='reports-history-order'),
+    path('reports/history/transactions/<str:payment_id>/', report_views.history_transaction_detail_view,
+         name='reports-history-transaction'),
 
     # Authentication
     path('login/', auth_views.login_view, name='login'),

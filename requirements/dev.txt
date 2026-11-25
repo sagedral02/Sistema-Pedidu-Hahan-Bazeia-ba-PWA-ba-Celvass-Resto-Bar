@@ -3,3 +3,5 @@ pytest>=9.0.0
 pytest-django>=4.10.0
 factory_boy>=3.3.0
 faker>=35.0.0
+# Browser UI tests (tests/ui). After install: python -m playwright install chromium
+pytest-playwright>=0.7.0

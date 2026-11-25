@@ -10,3 +10,4 @@ whitenoise>=6.9.0
 python-dotenv>=1.1.0
 django-cors-headers>=4.7.0
 gunicorn>=23.0.0
+xhtml2pdf>=0.2.16

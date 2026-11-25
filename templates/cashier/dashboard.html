@@ -63,91 +63,6 @@
   <div class="tables-grid" id="bill-alerts-container"></div>
 </section>
 
-<!-- History -->
-<section class="app-panel" id="orders-history-panel" aria-labelledby="history-title" hidden>
-  <div class="page-head">
-    <h1 class="page-title" id="history-title" data-i18n="order_history">Istóriku</h1>
-    <div class="segmented" role="tablist" aria-label="Tipu istóriku">
-      <button type="button" class="is-active" id="subtab-btn-orders" onclick="cashierApp.switchHistorySubTab('orders')"><span data-i18n="tab_orders_sub">Pedidu</span></button>
-      <button type="button" id="subtab-btn-bills" onclick="cashierApp.switchHistorySubTab('bills')"><span data-i18n="tab_bills_sub">Resibu</span></button>
-    </div>
-  </div>
-
-  <div id="subview-orders-history">
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <div class="segmented" role="group" aria-label="Períodu">
-        <button type="button" class="is-active" id="order-date-today" onclick="cashierApp.setOrdersDateFilter('today')"><span data-i18n="filter_today">Ohin</span></button>
-        <button type="button" id="order-date-all" onclick="cashierApp.setOrdersDateFilter('all')"><span data-i18n="filter_all">Hotu</span></button>
-      </div>
-      <select class="form-select form-select-sm w-auto" id="order-status-filter" onchange="cashierApp.filterOrdersHistory()" aria-label="Status">
-        <option value="ALL" data-i18n="filter_status_all">Status hotu</option>
-        <option value="WAITING_CASHIER_CONFIRMATION" data-i18n="status_waiting">Hein kaixa</option>
-        <option value="CONFIRMED" data-i18n="status_confirmed">Konfirmadu</option>
-        <option value="PREPARING" data-i18n="status_preparing">Tein hela</option>
-        <option value="READY" data-i18n="status_ready">Prontu</option>
-        <option value="SERVED" data-i18n="status_served">Entrega ona</option>
-        <option value="COMPLETED" data-i18n="status_completed">Remata</option>
-        <option value="REJECTED" data-i18n="status_rejected">Rekuza</option>
-      </select>
-      <div class="search-field flex-grow-1" style="min-width:200px;max-width:340px">
-        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-        <input type="search" id="order-history-search" class="form-control form-control-sm" placeholder="Buka meza ka kódigu" data-i18n-placeholder="search_orders_placeholder" oninput="cashierApp.filterOrdersHistory()" aria-label="Buka">
-      </div>
-    </div>
-    <div class="table-wrap">
-      <div class="table-responsive">
-        <table class="table table-app table-hover table-stack">
-          <thead>
-            <tr>
-              <th data-i18n="th_time">Oras</th>
-              <th data-i18n="th_order_code">Kódigu</th>
-              <th data-i18n="th_table">Meza</th>
-              <th data-i18n="th_items">Item</th>
-              <th class="text-end" data-i18n="th_total">Totál</th>
-              <th data-i18n="th_status">Status</th>
-              <th class="text-end"><span class="visually-hidden" data-i18n="th_action">Asaun</span></th>
-            </tr>
-          </thead>
-          <tbody id="orders-history-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div id="subview-bills-history" hidden>
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-      <div class="segmented" role="group" aria-label="Períodu">
-        <button type="button" class="is-active" id="bill-date-today" onclick="cashierApp.setBillsDateFilter('today')"><span data-i18n="filter_today">Ohin</span></button>
-        <button type="button" id="bill-date-all" onclick="cashierApp.setBillsDateFilter('all')"><span data-i18n="filter_all">Hotu</span></button>
-      </div>
-      <span class="badge-soft tone-success tabular" id="bills-total-revenue-badge">$0.00</span>
-      <div class="search-field flex-grow-1" style="min-width:200px;max-width:340px">
-        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-        <input type="search" id="bill-history-search" class="form-control form-control-sm" placeholder="Buka meza ka resibu" data-i18n-placeholder="search_bills_placeholder" oninput="cashierApp.filterBillsHistory()" aria-label="Buka">
-      </div>
-    </div>
-    <div class="table-wrap">
-      <div class="table-responsive">
-        <table class="table table-app table-hover table-stack">
-          <thead>
-            <tr>
-              <th data-i18n="date_time">Data</th>
-              <th data-i18n="th_bill_code">Resibu</th>
-              <th data-i18n="th_table">Meza</th>
-              <th data-i18n="payment_method_short">Metodu</th>
-              <th class="text-end" data-i18n="th_total">Totál</th>
-              <th class="text-end" data-i18n="th_tendered_change">Simu / Troku</th>
-              <th data-i18n="th_cashier">Kaixa</th>
-              <th class="text-end"><span class="visually-hidden" data-i18n="th_action">Asaun</span></th>
-            </tr>
-          </thead>
-          <tbody id="bills-history-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- Shift close -->
 <section class="app-panel" id="shift-close-panel" aria-labelledby="shift-title" hidden>
   <div class="page-head">
@@ -275,6 +190,7 @@
     phone: "{{ current_restaurant.phone|default:''|escapejs }}",
   };
 </script>
+<script src="{% static 'js/receipt.js' %}"></script>
 <script src="{% static 'js/cashier.js' %}"></script>
 <script>
   const cashierApp = new CashierApp();

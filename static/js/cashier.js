@@ -1,24 +1,8 @@
 /**
  * Cashier portal controller: verification queue, table activation, tables & POS payment,
- * bill requests, order / receipt history and shift close (Z-report).
+ * bill requests, receipts and shift close (Z-report). Order and receipt history lives in /reports/#history.
  * All server values are escaped before they are inserted into the DOM.
  */
-
-const CASHIER_STATUS = {
-  WAITING_CASHIER_CONFIRMATION: ['status-waiting', 'status_waiting'],
-  CONFIRMED: ['status-confirmed', 'status_confirmed'],
-  PREPARING: ['status-preparing', 'status_preparing'],
-  READY: ['status-ready', 'status_ready'],
-  SERVED: ['status-served', 'status_served'],
-  COMPLETED: ['status-completed', 'status_completed'],
-  REJECTED: ['status-rejected', 'status_rejected'],
-  CANCELLED: ['status-cancelled', 'status_cancelled'],
-};
-
-function statusPill(status) {
-  const [cls, key] = CASHIER_STATUS[status] || ['status-served', status];
-  return `<span class="status ${cls}">${escapeHtml(t(key))}</span>`;
-}
 
 function setCount(name, value) {
   document.querySelectorAll(`[data-count-for="${name}"]`).forEach((el) => {
@@ -52,16 +36,15 @@ class CashierApp {
     this.knownOrderIds = null;
     this.knownBillSessionIds = null;
 
-    this.currentHistorySubTab = 'orders';
-    this.ordersDateFilter = 'today';
-    this.billsDateFilter = 'today';
-    this.ordersHistoryData = [];
-    this.billsHistoryData = [];
-
     this.init();
   }
 
   init() {
+    // Bookmarks from before the history moved to Reports.
+    if (/^#orders-history-panel/.test(window.location.hash)) {
+      window.location.replace('/reports/#history');
+      return;
+    }
     this.refreshAll();
     this.initWebSocket();
 
@@ -70,13 +53,10 @@ class CashierApp {
       this.renderActivationRequestsUI();
       this.renderTablesUI();
       this.updateBillAlertsUI();
-      this.filterOrdersHistory();
-      this.filterBillsHistory();
     });
 
     window.addEventListener('app:panel', (e) => {
       const id = e.detail.id;
-      if (id === 'orders-history-panel') this.refreshActiveHistoryTab();
       if (id === 'shift-close-panel') this.loadShiftSummary();
       if (id === 'bill-alerts-panel') this.loadTables();
     });
@@ -552,41 +532,7 @@ class CashierApp {
   }
 
   receiptHtml(payment) {
-    const r = window.CELVASS_RESTAURANT || {};
-    const rows = (payment.items || [])
-      .map(
-        (i) => `
-        <tr>
-          <td>${escapeHtml(i.name)}${i.note ? `<br><small>* ${escapeHtml(i.note)}</small>` : ''}</td>
-          <td style="text-align:center">${escapeHtml(i.quantity)}</td>
-          <td style="text-align:right">${formatMoney(i.subtotal)}</td>
-        </tr>`
-      )
-      .join('');
-    const paidAt = payment.paid_at ? new Date(payment.paid_at).toLocaleString() : '';
-    return `
-      <div class="receipt-paper" id="printable-receipt">
-        <div style="text-align:center">
-          <strong style="font-size:14px">${escapeHtml((r.name || 'Celvass Resto & Bar').toUpperCase())}</strong><br>
-          ${r.address ? `<small>${escapeHtml(r.address)}</small><br>` : ''}
-          ${r.phone ? `<small>Tel: ${escapeHtml(r.phone)}</small>` : ''}
-        </div>
-        <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;margin:8px 0;padding:4px 0">
-          <div>${escapeHtml(t('th_table'))}: ${escapeHtml(payment.table_name || payment.table_code || '-')}</div>
-          <div>${escapeHtml(t('th_bill_code'))}: ${escapeHtml(payment.payment_code)}</div>
-          <div>${escapeHtml(t('date_time'))}: ${escapeHtml(paidAt)}</div>
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead><tr style="border-bottom:1px dashed #000"><th style="text-align:left">Item</th><th>Qtd</th><th style="text-align:right">${escapeHtml(t('subtotal'))}</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div style="border-top:1px dashed #000;margin-top:6px;padding-top:4px">
-          <div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(t('total').toUpperCase())}</span><span>${formatMoney(payment.amount)}</span></div>
-          <div style="display:flex;justify-content:space-between"><span>${escapeHtml(t('tendered_short'))}</span><span>${formatMoney(payment.tendered_amount)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(t('change_label'))}</span><span>${formatMoney(payment.change_amount)}</span></div>
-        </div>
-        <div style="text-align:center;margin-top:10px"><small>${escapeHtml(t('receipt_thanks'))}</small></div>
-      </div>`;
+    return Receipt.html(payment);
   }
 
   showReceiptModal(payment) {
@@ -595,168 +541,12 @@ class CashierApp {
   }
 
   openPrintWindow(innerHtml, title) {
-    const w = window.open('', '_blank', 'width=380,height=640');
-    if (!w) {
-      showToast(t('popup_blocked'), 'warning');
-      return;
-    }
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-      <style>
-        @page { size: 80mm auto; margin: 0; }
-        html, body { margin: 0; padding: 6px; width: 76mm; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
-        .receipt-paper { border: 0 !important; padding: 0 !important; max-width: none !important; }
-        table { width: 100%; border-collapse: collapse; } td, th { padding: 2px 0; vertical-align: top; }
-      </style></head><body>${innerHtml}</body></html>`);
-    w.document.close();
-    w.onload = () => {
-      w.focus();
-      w.print();
-      setTimeout(() => w.close(), 500);
-    };
+    return Receipt.printHtml(innerHtml, title);
   }
 
   printCurrentReceipt() {
     const el = document.getElementById('printable-receipt');
     if (el) this.openPrintWindow(el.outerHTML, t('receipt_title'));
-  }
-
-  // ------------------------------------------------------------------
-  // History
-  // ------------------------------------------------------------------
-  switchHistorySubTab(tab) {
-    this.currentHistorySubTab = tab;
-    document.getElementById('subtab-btn-orders').classList.toggle('is-active', tab === 'orders');
-    document.getElementById('subtab-btn-bills').classList.toggle('is-active', tab === 'bills');
-    document.getElementById('subview-orders-history').hidden = tab !== 'orders';
-    document.getElementById('subview-bills-history').hidden = tab !== 'bills';
-    this.refreshActiveHistoryTab();
-  }
-
-  refreshActiveHistoryTab() {
-    if (this.currentHistorySubTab === 'bills') this.loadBillsHistory();
-    else this.loadOrdersHistory();
-  }
-
-  setOrdersDateFilter(range) {
-    this.ordersDateFilter = range;
-    document.getElementById('order-date-today').classList.toggle('is-active', range === 'today');
-    document.getElementById('order-date-all').classList.toggle('is-active', range === 'all');
-    this.loadOrdersHistory();
-  }
-
-  setBillsDateFilter(range) {
-    this.billsDateFilter = range;
-    document.getElementById('bill-date-today').classList.toggle('is-active', range === 'today');
-    document.getElementById('bill-date-all').classList.toggle('is-active', range === 'all');
-    this.loadBillsHistory();
-  }
-
-  tableMessage(tbodyId, cols, html) {
-    const tbody = document.getElementById(tbodyId);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="${cols}" class="cell-empty">${html}</td></tr>`;
-  }
-
-  async loadOrdersHistory() {
-    this.tableMessage('orders-history-tbody', 7, emptyState('fa-spinner fa-spin', t('loading_history')));
-    try {
-      this.ordersHistoryData = (await apiGet(`/api/v1/cashier/orders/history/?date_range=${encodeURIComponent(this.ordersDateFilter)}`)) || [];
-      this.filterOrdersHistory();
-    } catch (e) {
-      this.tableMessage('orders-history-tbody', 7, emptyState('fa-triangle-exclamation', e.message));
-    }
-  }
-
-  filterOrdersHistory() {
-    const status = document.getElementById('order-status-filter')?.value || 'ALL';
-    const q = (document.getElementById('order-history-search')?.value || '').toLowerCase().trim();
-    let list = this.ordersHistoryData || [];
-    if (status !== 'ALL') list = list.filter((o) => o.status === status);
-    if (q) {
-      list = list.filter((o) =>
-        [o.order_code, o.table_name, o.table_code, o.session_code, o.items_summary].some((v) => (v || '').toLowerCase().includes(q))
-      );
-    }
-    this.renderOrdersHistoryTable(list);
-  }
-
-  renderOrdersHistoryTable(orders) {
-    const tbody = document.getElementById('orders-history-tbody');
-    if (!tbody) return;
-    if (!orders.length) {
-      this.tableMessage('orders-history-tbody', 7, emptyState('fa-inbox', t('no_orders_history')));
-      return;
-    }
-    const L = (k) => escapeHtml(t(k));
-    tbody.innerHTML = orders
-      .map(
-        (o) => `
-        <tr>
-          <td data-label="${L('th_time')}"><span class="tabular">${escapeHtml(o.created_at)}</span> <span class="text-tertiary fs-8">${escapeHtml(o.created_date || '')}</span></td>
-          <td class="cell-primary" data-label="${L('th_order_code')}">
-            <div class="d-flex justify-content-between align-items-center gap-2">
-              <strong>${escapeHtml(o.order_code)}</strong>
-              <span class="d-md-none">${statusPill(o.status)}</span>
-            </div>
-            ${o.customer_note ? `<div class="fs-8 text-tertiary">${escapeHtml(o.customer_note)}</div>` : ''}
-            ${o.rejection_reason ? `<div class="fs-8" style="color:var(--danger)">${escapeHtml(o.rejection_reason)}</div>` : ''}
-          </td>
-          <td data-label="${L('th_table')}">${escapeHtml(o.table_name || o.table_code)}</td>
-          <td data-label="${L('th_items')}" class="fs-7 text-secondary-app">${escapeHtml(o.items_summary)}</td>
-          <td data-label="${L('th_total')}" class="text-end tabular fw-semibold">${formatMoney(o.grand_total)}</td>
-          <td data-label="${L('th_status')}" class="d-none d-md-table-cell">${statusPill(o.status)}</td>
-          <td class="cell-actions text-end">
-            ${o.can_print_receipt ? `<button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.viewReceiptForSession('${escapeHtml(o.session_id)}')"><i class="fa-solid fa-receipt" aria-hidden="true"></i>${L('btn_print_receipt')}</button>` : ''}
-          </td>
-        </tr>`
-      )
-      .join('');
-  }
-
-  async loadBillsHistory() {
-    this.tableMessage('bills-history-tbody', 8, emptyState('fa-spinner fa-spin', t('loading_history')));
-    try {
-      this.billsHistoryData = (await apiGet(`/api/v1/cashier/bills/history/?date_range=${encodeURIComponent(this.billsDateFilter)}`)) || [];
-      this.filterBillsHistory();
-    } catch (e) {
-      this.tableMessage('bills-history-tbody', 8, emptyState('fa-triangle-exclamation', e.message));
-    }
-  }
-
-  filterBillsHistory() {
-    const q = (document.getElementById('bill-history-search')?.value || '').toLowerCase().trim();
-    let list = this.billsHistoryData || [];
-    if (q) list = list.filter((b) => [b.payment_code, b.table_name, b.table_code, b.cashier_name].some((v) => (v || '').toLowerCase().includes(q)));
-    const total = list.reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
-    const badge = document.getElementById('bills-total-revenue-badge');
-    if (badge) badge.textContent = `${t('total_revenue_badge')}: ${formatMoney(total)}`;
-    this.renderBillsHistoryTable(list);
-  }
-
-  renderBillsHistoryTable(bills) {
-    const tbody = document.getElementById('bills-history-tbody');
-    if (!tbody) return;
-    if (!bills.length) {
-      this.tableMessage('bills-history-tbody', 8, emptyState('fa-receipt', t('no_bills_found')));
-      return;
-    }
-    const L = (k) => escapeHtml(t(k));
-    tbody.innerHTML = bills
-      .map(
-        (b) => `
-        <tr>
-          <td data-label="${L('date_time')}"><span class="tabular">${escapeHtml(b.paid_at_time)}</span> <span class="text-tertiary fs-8">${escapeHtml(b.paid_at_date)}</span></td>
-          <td class="cell-primary" data-label="${L('th_bill_code')}">
-            <div class="d-flex justify-content-between align-items-center gap-2"><strong>${escapeHtml(b.payment_code)}</strong><span class="price d-md-none">${formatMoney(b.amount)}</span></div>
-          </td>
-          <td data-label="${L('th_table')}">${escapeHtml(b.table_name || b.table_code)}</td>
-          <td data-label="${L('payment_method_short')}"><span class="badge-soft">${escapeHtml(b.method)}</span></td>
-          <td data-label="${L('th_total')}" class="text-end tabular fw-semibold d-none d-md-table-cell">${formatMoney(b.amount)}</td>
-          <td data-label="${L('th_tendered_change')}" class="text-end tabular fs-7">${formatMoney(b.tendered_amount)} / ${formatMoney(b.change_amount)}</td>
-          <td data-label="${L('th_cashier')}">${escapeHtml(b.cashier_name)}</td>
-          <td class="cell-actions text-end"><button type="button" class="btn btn-sm btn-secondary-app" onclick="cashierApp.viewReceiptForSession('${escapeHtml(b.session_id)}')"><i class="fa-solid fa-print" aria-hidden="true"></i>${L('btn_print_receipt')}</button></td>
-        </tr>`
-      )
-      .join('');
   }
 
   // ------------------------------------------------------------------

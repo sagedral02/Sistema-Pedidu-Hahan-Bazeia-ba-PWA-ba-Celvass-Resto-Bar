@@ -85,6 +85,68 @@ class MenuItemCreateUpdateSerializer(serializers.Serializer):
     preparation_note = serializers.CharField(required=False, allow_blank=True, default="")
 
 
+class AdminUserSerializer(serializers.ModelSerializer):
+    display_name = serializers.SerializerMethodField()
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    has_history = serializers.SerializerMethodField()
+    is_self = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'full_name', 'display_name', 'role', 'role_display', 'is_active',
+            'is_superuser', 'last_login', 'created_at', 'has_history', 'is_self',
+        ]
+
+    def get_display_name(self, obj):
+        return obj.get_full_name()
+
+    def get_has_history(self, obj):
+        from apps.accounts.admin_services import has_history
+        return has_history(obj)
+
+    def get_is_self(self, obj):
+        request = self.context.get('request')
+        return bool(request and request.user and request.user.pk == obj.pk)
+
+
+class StaffUserWriteSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150, required=False)
+    full_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    password = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False, write_only=True)
+    role = serializers.ChoiceField(choices=['ADMIN', 'CASHIER', 'KITCHEN'], required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class AdminTableSerializer(serializers.ModelSerializer):
+    has_active_session = serializers.SerializerMethodField()
+    sessions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RestaurantTable
+        fields = [
+            'id', 'table_code', 'display_name', 'capacity', 'qr_token', 'status',
+            'sort_order', 'is_active', 'has_active_session', 'sessions_count', 'created_at',
+        ]
+
+    def get_has_active_session(self, obj):
+        from apps.tables.admin_services import has_active_session
+        return has_active_session(obj)
+
+    def get_sessions_count(self, obj):
+        return obj.sessions.count()
+
+
+class TableCreateUpdateSerializer(serializers.Serializer):
+    table_code = serializers.CharField(max_length=30)
+    display_name = serializers.CharField(max_length=80)
+    capacity = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=50)
+    sort_order = serializers.IntegerField(required=False, default=0)
+    is_active = serializers.BooleanField(required=False, default=True)
+    status = serializers.ChoiceField(choices=['AVAILABLE', 'MAINTENANCE'], required=False)
+
+
 class RestaurantTableSerializer(serializers.ModelSerializer):
     active_session = serializers.SerializerMethodField()
     pending_activation = serializers.SerializerMethodField()

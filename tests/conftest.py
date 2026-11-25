@@ -46,6 +46,17 @@ def kitchen_user(db):
     return user
 
 @pytest.fixture
+def cashier_two(db):
+    return User.objects.create_user(
+        username="cashier_two",
+        email="c2@test.tl",
+        password="password123",
+        role=Role.CASHIER,
+        is_staff=True,
+        full_name="Maria Cashier"
+    )
+
+@pytest.fixture
 def table_one(db, restaurant):
     return RestaurantTable.objects.create(
         restaurant=restaurant,
@@ -55,6 +66,23 @@ def table_one(db, restaurant):
         status=TableStatus.AVAILABLE,
         is_active=True
     )
+
+@pytest.fixture
+def table_two(db, restaurant):
+    return RestaurantTable.objects.create(
+        restaurant=restaurant,
+        table_code="T-02",
+        display_name="Meja 02",
+        capacity=2,
+        sort_order=2,
+        status=TableStatus.AVAILABLE,
+        is_active=True
+    )
+
+@pytest.fixture
+def session_two(db, restaurant, table_two, cashier_two):
+    from apps.tables.services import open_table_session
+    return open_table_session(table=table_two, opened_by=cashier_two, guest_count=3)
 
 @pytest.fixture
 def active_session(db, restaurant, table_one, cashier_user):

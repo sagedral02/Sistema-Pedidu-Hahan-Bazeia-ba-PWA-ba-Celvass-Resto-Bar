@@ -198,3 +198,18 @@ def test_admin_cannot_create_staff_with_weak_password(admin_user):
 
     ok = client.post('/api/v1/admin/users/create/', {'username': 'kaixa9', 'password': 'Tasi-Dili-2026', 'role': 'CASHIER'}, format='json')
     assert ok.status_code == 201
+
+
+@pytest.mark.parametrize('path', TEMPLATES, ids=lambda p: p.name)
+def test_django_tags_stay_inside_quoted_attribute_values(path):
+    """Django tags directly inside an HTML tag, or unquoted inside an on* handler, show up as editor errors."""
+    problems = []
+    for i, line in enumerate(_read(path).splitlines(), 1):
+        for tag in re.findall(r'<[a-zA-Z][^<>]*>', line):
+            bare = re.sub(r'"[^"]*"', '""', tag)
+            if '{%' in bare or '{{' in bare:
+                problems.append(f'{i}: {tag[:100]}')
+        for val in re.findall(r'\son\w+="([^"]*)"', line):
+            if '{%' in val or '{{' in re.sub(r"'[^']*'", "''", val):
+                problems.append(f'{i}: {val[:100]}')
+    assert problems == []

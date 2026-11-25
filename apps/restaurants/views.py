@@ -120,16 +120,31 @@ def admin_portal_view(request):
     categories = list(get_categories_with_counts(active_only=False))
     menu_items = get_all_menu_items()
 
+    from django.db.models import Count, Exists, OuterRef
     from apps.accounts.models import User
+    from apps.tables.models import RestaurantTable, TableSession
+    from apps.tables.selectors import ACTIVE_SESSION_STATUSES
+    from apps.payments.models import Payment
+
+    admin_tables = RestaurantTable.objects.annotate(
+        has_active_session=Exists(
+            TableSession.objects.filter(table=OuterRef('pk'), status__in=ACTIVE_SESSION_STATUSES)
+        ),
+        sessions_count=Count('sessions', distinct=True),
+    ).order_by('-is_active', 'sort_order', 'table_code')
 
     return render(request, 'admin_custom/dashboard.html', {
+        'admin_tables': admin_tables,
         'metrics': get_dashboard_metrics(),
         'menu_items': menu_items,
         'categories': categories,
         'active_category_count': sum(1 for c in categories if c.is_active),
         'tables': list_tables_with_status(),
         'audit_events': get_recent_audit_events(limit=50),
-        'staff_users': User.objects.order_by('role', 'username'),
+        'staff_users': User.objects.annotate(
+            hist_sessions=Exists(TableSession.objects.filter(opened_by=OuterRef('pk'))),
+            hist_payments=Exists(Payment.objects.filter(received_by=OuterRef('pk'))),
+        ).order_by('-is_active', 'role', 'username'),
     })
 
 

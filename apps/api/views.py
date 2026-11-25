@@ -48,6 +48,7 @@ from .serializers import (
     RestaurantTableSerializer, CategorySerializer, MenuItemSerializer,
     AdminCategorySerializer, CategoryCreateUpdateSerializer,
     AdminMenuItemSerializer, MenuItemCreateUpdateSerializer,
+    AdminTableSerializer, TableCreateUpdateSerializer, AdminUserSerializer, StaffUserWriteSerializer,
     OrderSerializer, OrderSubmitRequestSerializer, CashPaymentRequestSerializer,
     TableActivationRequestSerializer
 )
@@ -636,6 +637,96 @@ class AdminToggleMenuItemAvailabilityAPIView(APIView):
             return api_error("RESOURCE_NOT_FOUND", "Item menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
 
 
+class AdminTableListCreateAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        from apps.tables.selectors import list_all_tables_for_admin
+        return api_response(AdminTableSerializer(list_all_tables_for_admin(), many=True).data)
+
+    def post(self, request):
+        from apps.tables.admin_services import create_table
+        serializer = TableCreateUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus meza la válidu.", details=serializer.errors)
+        restaurant = Restaurant.objects.first()
+        if not restaurant:
+            return api_error("RESTAURANT_NOT_FOUND", "Restorante seidauk konfigura.")
+        data = serializer.validated_data
+        try:
+            table = create_table(
+                restaurant=restaurant,
+                table_code=data['table_code'],
+                display_name=data['display_name'],
+                capacity=data.get('capacity'),
+                sort_order=data.get('sort_order', 0),
+                is_active=data.get('is_active', True),
+                actor_user=request.user,
+            )
+            return api_response(AdminTableSerializer(table).data, http_status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return api_error("TABLE_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)
+
+
+class AdminTableDetailAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def _get(self, table_id):
+        return RestaurantTable.objects.filter(id=table_id).first()
+
+    def get(self, request, table_id):
+        table = self._get(table_id)
+        if not table:
+            return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        return api_response(AdminTableSerializer(table).data)
+
+    def put(self, request, table_id):
+        return self.patch(request, table_id)
+
+    def patch(self, request, table_id):
+        from apps.tables.admin_services import update_table
+        table = self._get(table_id)
+        if not table:
+            return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        serializer = TableCreateUpdateSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus meza la válidu.", details=serializer.errors)
+        data = serializer.validated_data
+        try:
+            updated = update_table(
+                table=table,
+                table_code=data.get('table_code'),
+                display_name=data.get('display_name'),
+                capacity=data.get('capacity'),
+                capacity_provided='capacity' in data,
+                sort_order=data.get('sort_order') if 'sort_order' in request.data else None,
+                is_active=data.get('is_active') if 'is_active' in request.data else None,
+                status=data.get('status'),
+                actor_user=request.user,
+            )
+            return api_response(AdminTableSerializer(updated).data)
+        except ValidationError as e:
+            return api_error("TABLE_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)
+
+    def delete(self, request, table_id):
+        from apps.tables.admin_services import delete_table
+        table = self._get(table_id)
+        if not table:
+            return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            return api_response(delete_table(table=table, actor_user=request.user))
+        except ValidationError as e:
+            return api_error("TABLE_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)
+
+
 class AdminRotateTableQRAPIView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated, IsAdminRole]
@@ -990,41 +1081,115 @@ class CashierShiftSummaryAPIView(APIView):
         })
 
 
-class AdminUserCreateAPIView(APIView):
+class AdminOverviewAPIView(APIView):
+    """Charts and KPI cards of the admin Overview. `range` is today, 7d or 30d."""
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated, IsAdminRole]
 
-    def post(self, request):
-        username = request.data.get('username', '').strip()
-        password = request.data.get('password', '').strip()
-        role = request.data.get('role', 'CASHIER').upper()
-        first_name = request.data.get('first_name', '').strip()
-
-        if not username or not password:
-            return api_error("INVALID_INPUT", "Naran-uzuáriu no liafuan xave obrigatóriu.")
-
-        if role not in ['CASHIER', 'KITCHEN', 'ADMIN']:
-            return api_error("INVALID_ROLE", "Papél la válidu.")
-
-        from apps.accounts.models import User
-        from django.contrib.auth.password_validation import validate_password
-        if User.objects.filter(username=username).exists():
-            return api_error("USER_EXISTS", "Naran-uzuáriu ne'e eziste ona.")
-
+    def get(self, request):
+        from apps.reporting.overview import build_overview
+        from apps.reporting.reports import ReportError
         try:
-            validate_password(password, user=User(username=username, full_name=first_name))
-        except ValidationError as e:
-            return api_error("WEAK_PASSWORD", " ".join(e.messages))
+            data = build_overview(request.GET.get('range'))
+        except ReportError:
+            return api_error("INVALID_INPUT", "Períodu la válidu (today, 7d ka 30d).")
+        response = api_response(data)
+        response['Cache-Control'] = 'no-store'
+        return response
 
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            role=role,
-            full_name=first_name,
-        )
-        return api_response({
-            'id': str(user.id),
-            'username': user.username,
-            'role': user.role,
-            'full_name': user.full_name,
-        }, http_status=status.HTTP_201_CREATED)
+
+class AdminUserListCreateAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        from apps.accounts.models import User
+        users = User.objects.order_by('-is_active', 'role', 'username')
+        return api_response(AdminUserSerializer(users, many=True, context={'request': request}).data)
+
+    def post(self, request):
+        from apps.accounts.admin_services import create_staff_user, PasswordError
+        serializer = StaffUserWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus staff la válidu.", details=serializer.errors)
+        data = serializer.validated_data
+        if not data.get('username') or not data.get('password'):
+            return api_error("INVALID_INPUT", "Naran-uzuáriu no liafuan xave obrigatóriu.")
+        try:
+            user = create_staff_user(
+                username=data['username'],
+                password=data['password'],
+                role=data.get('role', 'CASHIER'),
+                full_name=data.get('full_name', data.get('first_name', '')),
+                actor_user=request.user,
+            )
+        except PasswordError as e:
+            return api_error("WEAK_PASSWORD", " ".join(e.messages))
+        except ValidationError as e:
+            return api_error("USER_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)
+        return api_response(AdminUserSerializer(user, context={'request': request}).data, http_status=status.HTTP_201_CREATED)
+
+
+class AdminUserDetailAPIView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def _get(self, user_id):
+        from apps.accounts.models import User
+        return User.objects.filter(pk=user_id).first()
+
+    def get(self, request, user_id):
+        user = self._get(user_id)
+        if not user:
+            return api_error("RESOURCE_NOT_FOUND", "Staff la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        return api_response(AdminUserSerializer(user, context={'request': request}).data)
+
+    def put(self, request, user_id):
+        return self.patch(request, user_id)
+
+    def patch(self, request, user_id):
+        from django.contrib.auth import update_session_auth_hash
+        from apps.accounts.admin_services import update_staff_user, PasswordError
+        user = self._get(user_id)
+        if not user:
+            return api_error("RESOURCE_NOT_FOUND", "Staff la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        serializer = StaffUserWriteSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Dadus staff la válidu.", details=serializer.errors)
+        data = serializer.validated_data
+        has_name = 'full_name' in data or 'first_name' in data
+        password = data.get('password') or None
+        try:
+            updated = update_staff_user(
+                user=user,
+                actor_user=request.user,
+                username=data.get('username'),
+                full_name=data.get('full_name', data.get('first_name')) if has_name else None,
+                role=data.get('role'),
+                is_active=data['is_active'] if 'is_active' in data else None,
+                password=password,
+            )
+        except PasswordError as e:
+            return api_error("WEAK_PASSWORD", " ".join(e.messages))
+        except ValidationError as e:
+            return api_error("USER_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)
+        if password and request.user.pk == updated.pk:
+            # Keep the admin who changed their own password signed in on this device.
+            update_session_auth_hash(request, updated)
+        return api_response(AdminUserSerializer(updated, context={'request': request}).data)
+
+    def delete(self, request, user_id):
+        from apps.accounts.admin_services import delete_staff_user
+        user = self._get(user_id)
+        if not user:
+            return api_error("RESOURCE_NOT_FOUND", "Staff la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            return api_response(delete_staff_user(user=user, actor_user=request.user))
+        except ValidationError as e:
+            return api_error("USER_ERROR", validation_message(e))
+        except Exception as e:
+            return server_error(e, request.path)

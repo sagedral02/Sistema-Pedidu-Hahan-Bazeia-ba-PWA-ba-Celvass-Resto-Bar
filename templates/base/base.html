@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
   {% block extra_css %}{% endblock %}
 </head>
-<body data-role="{% block role %}customer{% endblock %}" data-default-panel="{% block default_panel %}{% endblock %}" class="{% block body_class %}{% endblock %}">
+<body data-role="{% block role %}customer{% endblock %}" data-default-panel="{% block default_panel %}{% endblock %}" data-panel-home="{% block panel_home %}{% endblock %}" class="{% block body_class %}{% endblock %}">
   {% csrf_token %}
   <a class="visually-hidden-focusable btn btn-primary position-absolute m-2" style="z-index:2000" href="#main">Ba konteúdu</a>
 

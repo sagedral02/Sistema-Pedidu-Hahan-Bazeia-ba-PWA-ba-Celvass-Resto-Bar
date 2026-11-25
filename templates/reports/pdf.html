@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <style>
+    @page {
+      size: {% if landscape %}A4 landscape{% else %}A4 portrait{% endif %};
+      margin: 1.5cm 1.5cm 2.2cm 1.5cm;
+      @frame footer_frame {
+        -pdf-frame-content: footer_content;
+        left: 1.5cm;
+        width: {% if landscape %}26.7cm{% else %}18cm{% endif %};
+        top: {% if landscape %}19.2cm{% else %}26.7cm{% endif %};
+        height: 0.8cm;
+      }
+    }
+    body { font-family: Helvetica; font-size: 9pt; color: #1e293b; }
+    h1 { font-size: 16pt; margin: 0; color: #0f172a; }
+    h2 { font-size: 12pt; margin: 2pt 0 0 0; color: #334155; }
+    .brand { font-size: 10pt; font-weight: bold; color: #334155; }
+    .meta { font-size: 8.5pt; color: #64748b; }
+    .rule { border-top: 1.5pt solid #334155; margin: 6pt 0 8pt 0; }
+    .note { font-size: 8.5pt; color: #92400e; margin: 4pt 0; }
+    table.summary { width: 100%; margin: 6pt 0 10pt 0; }
+    table.summary td { border: 0.5pt solid #cbd5e1; background-color: #f1f5f9; padding: 5pt 7pt; }
+    .kpi-label { font-size: 8pt; color: #64748b; }
+    .kpi-value { font-size: 13pt; font-weight: bold; color: #0f172a; }
+    table.data { width: 100%; border-collapse: collapse; }
+    table.data th { background-color: #334155; color: #ffffff; font-size: 8.5pt; padding: 4pt 5pt; text-align: left; }
+    table.data td { border-bottom: 0.5pt solid #e2e8f0; padding: 3.5pt 5pt; font-size: 8.5pt; }
+    .end { text-align: right; }
+    .empty { text-align: center; padding: 18pt 0; color: #64748b; }
+    #footer_content { font-size: 8pt; color: #64748b; text-align: right; }
+  </style>
+</head>
+<body>
+  <div id="footer_content">
+    {{ restaurant_name }} &nbsp;|&nbsp; {{ labels.page }} <pdf:pagenumber> {{ labels.of }} <pdf:pagecount>
+  </div>
+
+  <div class="brand">{{ restaurant_name }}</div>
+  <h1>{{ labels.report }}</h1>
+  <h2>{{ title }}</h2>
+  <div class="meta">{{ labels.period }}: {{ period_label }}</div>
+  {% if filters_text %}<div class="meta">{{ labels.filters }}: {{ filters_text }}</div>{% endif %}
+  <div class="meta">{{ labels.printed_at }}: {{ printed_at }} &nbsp;|&nbsp; {{ labels.printed_by }}: {{ printed_by }}</div>
+  <div class="rule"></div>
+
+  {% if scope_own %}<div class="note">{{ labels.scope_own }}</div>{% endif %}
+
+  {% if summary %}
+  <table class="summary">
+    <tr>
+      {% for item in summary %}
+      <td>
+        <div class="kpi-label">{{ item.label }}</div>
+        <div class="kpi-value">{{ item.value }}</div>
+      </td>
+      {% endfor %}
+    </tr>
+  </table>
+  {% endif %}
+
+  <table class="data" repeat="1">
+    <thead>
+      <tr>
+        {% for col in columns %}<th class="{% if col.align == 'end' %}end{% endif %}">{{ col.label }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for cell in row %}<td class="{% if cell.end %}end{% endif %}">{{ cell.text }}</td>{% endfor %}
+      </tr>
+      {% empty %}
+      <tr><td class="empty" colspan="{{ columns|length }}">{{ labels.no_data }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if truncated_note %}<div class="note">{{ truncated_note }}</div>{% endif %}
+</body>
+</html>

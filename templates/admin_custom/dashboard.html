@@ -11,79 +11,93 @@
 {% block content %}
 
 <!-- Overview -->
-<section class="app-panel" id="overview-panel" aria-labelledby="overview-title">
+<section class="app-panel" id="overview-panel" aria-labelledby="overview-title" data-reports-url="{% url 'reports' %}">
   <div class="page-head">
     <div>
       <h1 class="page-title" id="overview-title" data-i18n="nav_overview">Rezumu</h1>
       <p class="page-subtitle">{{ current_restaurant.name }} &middot; USD &middot; {{ current_restaurant.timezone }}</p>
     </div>
+    <div class="overview-controls">
+      <span class="overview-status" id="ov-status" role="status" aria-live="polite"></span>
+      <div class="segmented" id="ov-range" role="group" aria-label="Períodu rezumu">
+        <button type="button" class="is-active" data-range="today" aria-pressed="true"><span data-i18n="ov_range_today">Ohin</span></button>
+        <button type="button" data-range="7d" aria-pressed="false"><span data-i18n="ov_range_7d">Loron 7</span></button>
+        <button type="button" data-range="30d" aria-pressed="false"><span data-i18n="ov_range_30d">Loron 30</span></button>
+      </div>
+      <button type="button" class="icon-btn is-outlined" id="ov-refresh" aria-label="Atualiza" data-i18n-title="refresh" title="Atualiza"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+    </div>
   </div>
 
-  <div class="kpi-grid mb-3">
-    <div class="kpi">
-      <div class="kpi-label" data-i18n="revenue_today">Rendimentu ohin</div>
-      <div class="kpi-value">${{ metrics.today_sales }}</div>
-      <div class="kpi-note">{{ metrics.payments_count }} <span data-i18n="transactions_completed">transasaun</span></div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label" data-i18n="total_orders">Pedidu ohin</div>
-      <div class="kpi-value">{{ metrics.total_orders_count }}</div>
-      <div class="kpi-note">{{ metrics.active_kitchen_count }} <span data-i18n="active_in_kitchen">iha dapur</span></div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label" data-i18n="table_occupancy">Meza okupadu</div>
-      <div class="kpi-value">{{ metrics.occupied_tables }}<span class="text-tertiary fs-6"> / {{ metrics.total_tables }}</span></div>
-      <div class="kpi-note" data-i18n="tables_occupied_now">Agora</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label" data-i18n="rejected_orders">Rekuza</div>
-      <div class="kpi-value" {% if metrics.rejected_count %}style="color:var(--danger)"{% endif %}>{{ metrics.rejected_count }}</div>
-      <div class="kpi-note" data-i18n="rejected_before_kitchen">Molok to'o dapur</div>
-    </div>
+  <div class="kpi-grid mb-3" id="ov-kpis" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+    <div class="kpi" data-kpi="sales"><div class="kpi-label" data-i18n="ov_kpi_sales">Vendas</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="transactions"><div class="kpi-label" data-i18n="ov_kpi_transactions">Transasaun</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="average"><div class="kpi-label" data-i18n="ov_kpi_average">Média ba transasaun</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="orders"><div class="kpi-label" data-i18n="ov_kpi_orders">Pedidu</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="rejection_rate"><div class="kpi-label" data-i18n="ov_kpi_rejection">Taxa rekuza</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="tables"><div class="kpi-label" data-i18n="ov_kpi_tables">Meza okupadu</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
   </div>
 
   <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_trend">Tendénsia vendas</h2></div>
+        <div id="ov-trend"></div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="rpt_type_payment_methods">Métodu pagamentu</h2></div>
+        <div id="ov-methods"></div>
+      </div>
+    </div>
+
     <div class="col-lg-6">
       <div class="surface surface-pad h-100">
-        <h2 class="section-title mb-2" data-i18n="top_items_title">Menu fa'an barak liu ohin</h2>
-        <div class="table-responsive">
-          <table class="table table-app table-stack">
-            <thead><tr><th data-i18n="th_menu_col">Menu</th><th class="text-end" data-i18n="th_qty_sold">Fa'an</th><th class="text-end" data-i18n="th_total_rev">Rendimentu</th></tr></thead>
-            <tbody>
-              {% for item in metrics.top_items %}
-                <tr>
-                  <td class="cell-primary fw-semibold">{{ item.menu_name_snapshot }}</td>
-                  <td class="text-end tabular" data-label="Fa'an" data-i18n-label="th_qty_sold">{{ item.qty_sold }}</td>
-                  <td class="text-end tabular" data-label="Rendimentu" data-i18n-label="th_total_rev">${{ item.revenue }}</td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="3" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i><div data-i18n="no_sales_today">Seidauk iha vendas ohin.</div></div></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_hours">Oras okupadu (pedidu)</h2></div>
+        <div id="ov-hours"></div>
       </div>
     </div>
     <div class="col-lg-6">
       <div class="surface surface-pad h-100">
-        <h2 class="section-title mb-2" data-i18n="recent_payments_title">Pagamentu foun</h2>
-        <div class="table-responsive">
-          <table class="table table-app table-stack">
-            <thead><tr><th data-i18n="th_table">Meza</th><th data-i18n="th_time">Oras</th><th data-i18n="th_receipt_num">Resibu</th><th class="text-end" data-i18n="th_amount">Montante</th></tr></thead>
-            <tbody>
-              {% for tx in metrics.recent_transactions %}
-                <tr>
-                  <td class="cell-primary"><div class="d-flex justify-content-between"><strong>{{ tx.table_session.table.display_name }}</strong><span class="price d-md-none">${{ tx.amount }}</span></div></td>
-                  <td data-label="Oras" data-i18n-label="th_time" class="tabular">{{ tx.created_at|date:"d/m H:i" }}</td>
-                  <td data-label="Resibu" data-i18n-label="th_receipt_num"><span class="code-text">{{ tx.payment_code }}</span></td>
-                  <td class="text-end tabular fw-semibold d-none d-md-table-cell">${{ tx.amount }}</td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="4" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-receipt" aria-hidden="true"></i><div data-i18n="no_payments_today">Seidauk iha pagamentu.</div></div></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_status">Status pedidu</h2></div>
+        <div id="ov-statuses"></div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head">
+          <h2 class="section-title" data-i18n="ov_chart_top">Menu fa'an barak liu</h2>
+          <div class="segmented" id="ov-top-mode" role="group" aria-label="Menu">
+            <button type="button" class="is-active" data-mode="qty" aria-pressed="true"><span data-i18n="ov_top_qty">Kuantidade</span></button>
+            <button type="button" data-mode="revenue" aria-pressed="false"><span data-i18n="ov_top_revenue">Rendimentu</span></button>
+          </div>
         </div>
+        <div id="ov-top"></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_categories">Vendas tuir kategoria</h2></div>
+        <div id="ov-categories"></div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_cashiers">Simu tuir kaixa</h2></div>
+        <div id="ov-cashiers"></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head">
+          <h2 class="section-title" data-i18n="ov_recent_payments">Pagamentu foun</h2>
+          <a class="btn btn-sm btn-secondary-app" href="{% url 'reports' %}#history/transactions"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span data-i18n="ov_view_history">Haree istóriku hotu</span></a>
+        </div>
+        <ul class="overview-list" id="ov-recent-payments"></ul>
+        <h2 class="section-title mt-4 mb-2" data-i18n="ov_recent_rejections">Pedidu rekuza foun</h2>
+        <ul class="overview-list" id="ov-recent-rejections"></ul>
       </div>
     </div>
   </div>
@@ -129,7 +143,7 @@
             <tr class="admin-menu-row" data-cat-id="{{ item.category_id }}" data-search="{{ item.name|lower }} {{ item.sku|default:''|lower }} {{ item.description|default:''|lower }}">
               <td class="cell-primary">
                 <div class="d-flex align-items-center gap-2-5">
-                  <img src="{{ item.display_image }}" alt="" class="thumb" loading="lazy" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+                  <img src="{{ item.display_image }}" alt="" class="thumb" loading="lazy" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
                   <div class="min-w-0">
                     <div class="fw-bold truncate">{{ item.name }}{% if item.is_featured %} <i class="fa-solid fa-star fs-8" style="color:var(--warning)" title="Featured" aria-label="Featured"></i>{% endif %}</div>
                     <div class="fs-8 text-tertiary truncate" style="max-width:320px">{% if item.sku %}<span class="code-text me-1">{{ item.sku }}</span>{% endif %}{{ item.description|default:'' }}</div>
@@ -216,7 +230,7 @@
               </td>
               <td data-label="Status" data-i18n-label="category_status">
                 <div class="form-check form-switch m-0">
-                  <input class="form-check-input" type="checkbox" role="switch" id="cat-active-{{ cat.id }}" {% if cat.is_active %}checked{% endif %} onchange="toggleCategoryStatus('{{ cat.id }}', this)">
+                  {% if cat.is_active %}<input class="form-check-input" type="checkbox" role="switch" id="cat-active-{{ cat.id }}" checked onchange="toggleCategoryStatus('{{ cat.id }}', this)">{% else %}<input class="form-check-input" type="checkbox" role="switch" id="cat-active-{{ cat.id }}" onchange="toggleCategoryStatus('{{ cat.id }}', this)">{% endif %}
                   <label class="form-check-label fs-7" for="cat-active-{{ cat.id }}">{% if cat.is_active %}<span data-i18n="category_active">Ativu</span>{% else %}<span data-i18n="category_inactive">La ativu</span>{% endif %}</label>
                 </div>
               </td>
@@ -224,7 +238,7 @@
                 <div class="d-inline-flex gap-1">
                   <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openCreateMenuItemModal('{{ cat.id }}')" aria-label="Aumenta menu" data-i18n-title="btn_add_menu" title="Aumenta menu"><i class="fa-solid fa-plus"></i></button>
                   <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditCategoryModal('{{ cat.id }}')" aria-label="Edita" data-i18n-title="btn_edit_category" title="Edita"><i class="fa-solid fa-pen"></i></button>
-                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteCategory('{{ cat.id }}', this.dataset.name, {{ cat.item_count|default:0 }})" data-name="{{ cat.name }}" aria-label="Hamos" data-i18n-title="btn_delete_category" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteCategory('{{ cat.id }}', this.dataset.name, Number(this.dataset.count))" data-name="{{ cat.name }}" data-count="{{ cat.item_count|default:0 }}" aria-label="Hamos" data-i18n-title="btn_delete_category" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
               </td>
             </tr>
@@ -244,7 +258,10 @@
       <h1 class="page-title" id="tables-title" data-i18n="tables_qr_title">Meza no QR</h1>
       <p class="page-subtitle" data-i18n="tables_qr_desc">Troka QR se karik QR tuan lakon ka kopia ona.</p>
     </div>
-    <a href="{% url 'admin-qr-sheet' %}" target="_blank" rel="noopener" class="btn btn-secondary-app"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="btn_print_qr_sheet">Imprime QR</span></a>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{% url 'admin-qr-sheet' %}" target="_blank" rel="noopener" class="btn btn-secondary-app"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="btn_print_qr_sheet">Imprime QR</span></a>
+      <button type="button" class="btn btn-primary" onclick="openCreateTableModal()"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="btn_add_table">Aumenta meza</span></button>
+    </div>
   </div>
 
   <div class="table-wrap">
@@ -259,17 +276,32 @@
             <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
           </tr>
         </thead>
-        <tbody>
-          {% for tbl in tables %}
-            <tr>
-              <td class="cell-primary"><div class="fw-bold">{{ tbl.display_name }}</div><div class="fs-8 text-tertiary">{{ tbl.table_code }}</div></td>
+        <tbody id="admin-tables-tbody">
+          {% for tbl in admin_tables %}
+            <tr class="{% if not tbl.is_active %}opacity-75{% endif %}">
+              <td class="cell-primary">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="min-w-0">
+                    <div class="fw-bold">{{ tbl.display_name }}</div>
+                    <div class="fs-8 text-tertiary">{{ tbl.table_code }}{% if tbl.sort_order %} &middot; <span data-i18n="category_sort">Ordem</span> {{ tbl.sort_order }}{% endif %}</div>
+                  </div>
+                  {% if not tbl.is_active %}<span class="badge-soft" data-i18n="category_inactive">La ativu</span>{% endif %}
+                </div>
+              </td>
               <td data-label="Kapasidade" data-i18n-label="th_capacity" class="tabular">{{ tbl.capacity|default:"-" }}</td>
-              <td data-label="Status" data-i18n-label="th_current_status"><span class="status status-{{ tbl.status|lower }}">{{ tbl.get_status_display }}</span></td>
+              <td data-label="Status" data-i18n-label="th_current_status">
+                {% if tbl.status == 'AVAILABLE' %}<span class="status status-available" data-i18n="table_status_available">Disponível</span>{% elif tbl.status == 'OCCUPIED' %}<span class="status status-occupied" data-i18n="table_status_occupied">Okupadu</span>{% else %}<span class="status status-maintenance" data-i18n="table_status_unavailable">La disponível</span>{% endif %}
+                {% if tbl.has_active_session %}<span class="badge-soft tone-info ms-1" data-i18n="active_session">Sesaun ativu</span>{% endif %}
+              </td>
               <td data-label="QR" data-i18n-label="th_qr_token"><span class="code-text">{{ tbl.qr_token|slice:":12" }}…</span></td>
               <td class="cell-actions text-end">
-                <div class="d-inline-flex gap-1">
-                  <a class="btn btn-sm btn-ghost btn-icon" href="/t/{{ tbl.qr_token }}/" target="_blank" rel="noopener" aria-label="Loke menu meza" title="Loke menu meza"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
-                  <button type="button" class="btn btn-sm btn-secondary-app" onclick="rotateTableQR('{{ tbl.id }}', this.dataset.name)" data-name="{{ tbl.display_name }}"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span data-i18n="btn_rotate_qr">Troka QR</span></button>
+                <div class="d-inline-flex gap-1 flex-wrap justify-content-end">
+                  {% if tbl.is_active %}
+                    <a class="btn btn-sm btn-ghost btn-icon" href="/t/{{ tbl.qr_token }}/" target="_blank" rel="noopener" aria-label="Loke menu meza" data-i18n-title="open_table_menu" title="Loke menu meza"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="rotateTableQR('{{ tbl.id }}', this.dataset.name)" data-name="{{ tbl.display_name }}" aria-label="Troka QR" data-i18n-title="btn_rotate_qr" title="Troka QR"><i class="fa-solid fa-arrows-rotate"></i></button>
+                  {% endif %}
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditTableModal('{{ tbl.id }}')" aria-label="Edita" data-i18n-title="btn_edit_table" title="Edita"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteTable('{{ tbl.id }}', this.dataset.name, this.dataset.busy === 'true', Number(this.dataset.sessions))" data-name="{{ tbl.display_name }}" data-busy="{{ tbl.has_active_session|yesno:'true,false' }}" data-sessions="{{ tbl.sessions_count }}" aria-label="Hamos" data-i18n-title="btn_delete_table" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
               </td>
             </tr>
@@ -289,20 +321,41 @@
       <h1 class="page-title" id="users-title" data-i18n="staff_mgmt_title">Staff</h1>
       <p class="page-subtitle" data-i18n="staff_mgmt_alert">Staff ida-idak haree de'it portal tuir sira-nia papél.</p>
     </div>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span data-i18n="btn_create_user">Kria staff</span></button>
+    <button type="button" class="btn btn-primary" onclick="openCreateStaffModal()"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span data-i18n="btn_create_user">Kria staff</span></button>
   </div>
 
   <div class="table-wrap">
     <div class="table-responsive">
-      <table class="table table-app table-stack">
-        <thead><tr><th data-i18n="label_username">Uzuáriu</th><th data-i18n="label_role">Papél</th><th data-i18n="status">Status</th><th data-i18n="joined">Kria iha</th></tr></thead>
-        <tbody>
+      <table class="table table-app table-hover table-stack">
+        <thead>
+          <tr>
+            <th data-i18n="label_username">Uzuáriu</th>
+            <th data-i18n="label_role">Papél</th>
+            <th data-i18n="status">Status</th>
+            <th data-i18n="last_login">Login ikus</th>
+            <th data-i18n="joined">Kria iha</th>
+            <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
+          </tr>
+        </thead>
+        <tbody id="admin-staff-tbody">
           {% for staff in staff_users %}
-            <tr>
-              <td class="cell-primary"><div class="fw-bold">{{ staff.get_full_name }}</div><div class="fs-8 text-tertiary">@{{ staff.username }}</div></td>
-              <td data-label="Papél" data-i18n-label="label_role"><span class="badge-soft {% if staff.is_superuser or staff.role == 'ADMIN' %}tone-accent{% elif staff.role == 'CASHIER' %}tone-success{% else %}tone-info{% endif %}">{{ staff.get_role_display }}</span></td>
+            <tr class="{% if not staff.is_active %}opacity-75{% endif %}">
+              <td class="cell-primary">
+                <div class="fw-bold">{{ staff.get_full_name }}{% if staff.pk == user.pk %} <span class="badge-soft tone-accent" data-i18n="you_badge">Ita-boot</span>{% endif %}</div>
+                <div class="fs-8 text-tertiary">@{{ staff.username }}</div>
+              </td>
+              <td data-label="Papél" data-i18n-label="label_role">
+                {% if staff.is_superuser or staff.role == 'ADMIN' %}<span class="badge-soft tone-accent" data-i18n="role_admin">Admin</span>{% elif staff.role == 'CASHIER' %}<span class="badge-soft tone-success" data-i18n="role_cashier">Kaixa</span>{% else %}<span class="badge-soft tone-info" data-i18n="role_kitchen">Dapur</span>{% endif %}
+              </td>
               <td data-label="Status" data-i18n-label="status">{% if staff.is_active %}<span class="badge-soft tone-success" data-i18n="category_active">Ativu</span>{% else %}<span class="badge-soft" data-i18n="category_inactive">La ativu</span>{% endif %}</td>
+              <td data-label="Login ikus" data-i18n-label="last_login" class="tabular fs-7">{{ staff.last_login|date:"d/m/Y H:i"|default:"-" }}</td>
               <td data-label="Kria iha" data-i18n-label="joined" class="tabular fs-7">{{ staff.created_at|date:"d/m/Y" }}</td>
+              <td class="cell-actions text-end">
+                <div class="d-inline-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditStaffModal('{{ staff.id }}')" aria-label="Edita" data-i18n-title="btn_edit_staff" title="Edita"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteStaff('{{ staff.id }}', this.dataset.name, this.dataset.history === 'true')" data-name="{{ staff.get_full_name }}" data-history="{% if staff.hist_sessions or staff.hist_payments %}true{% else %}false{% endif %}" data-busy="{% if staff.pk == user.pk or staff.is_superuser %}true{% else %}false{% endif %}" aria-label="Hamos" data-i18n-title="btn_delete_staff" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -397,7 +450,7 @@
           <div class="col-md-5">
             <div class="form-label" data-i18n="menu_photo">Foto</div>
             <div class="surface-muted mb-2 overflow-hidden" style="aspect-ratio:4/3">
-              <img id="menu-image-preview" src="{% static 'icons/default-food.png' %}" alt="" class="w-100 h-100" style="object-fit:cover" onerror="this.onerror=null;this.src='{% static 'icons/default-food.png' %}'">
+              <img id="menu-image-preview" src="{% static 'icons/default-food.png' %}" alt="" class="w-100 h-100" style="object-fit:cover" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
             </div>
             <label class="form-label" for="menu-form-imgfile" data-i18n="menu_image_file">Upload foto</label>
             <input type="file" class="form-control form-control-sm mb-2" id="menu-form-imgfile" accept="image/*" onchange="handleMenuFileSelect(event)">
@@ -482,38 +535,103 @@
   </div>
 </div>
 
-<!-- Create staff -->
-<div class="modal fade modal-sheet" id="createUserModal" tabindex="-1" aria-labelledby="create-user-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <form class="modal-content" onsubmit="event.preventDefault(); submitCreateStaffUser();" novalidate>
+<!-- Table form -->
+<div class="modal fade modal-sheet" id="tableModal" tabindex="-1" aria-labelledby="table-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <form class="modal-content" id="table-form" onsubmit="event.preventDefault(); submitTableForm();" novalidate>
       <div class="modal-header">
-        <h2 class="modal-title" id="create-user-title" data-i18n="modal_create_staff_title">Kria konta staff</h2>
+        <h2 class="modal-title" id="table-modal-title">Meza</h2>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label" for="new-user-fullname" data-i18n="label_fullname">Naran kompletu</label>
-          <input type="text" class="form-control" id="new-user-fullname" autocomplete="off">
+        <input type="hidden" id="table-id" value="">
+        <div class="row g-2 mb-3">
+          <div class="col-5">
+            <label class="form-label" for="table-form-code"><span data-i18n="th_table_code">Kódigu</span> *</label>
+            <input type="text" class="form-control text-uppercase" id="table-form-code" required maxlength="30" placeholder="T-09" autocapitalize="characters">
+          </div>
+          <div class="col-7">
+            <label class="form-label" for="table-form-name"><span data-i18n="th_table_name">Naran meza</span> *</label>
+            <input type="text" class="form-control" id="table-form-name" required maxlength="80" placeholder="Meza 09">
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label" for="new-user-username"><span data-i18n="label_username">Naran-uzuáriu</span> *</label>
-          <input type="text" class="form-control" id="new-user-username" required autocomplete="off" autocapitalize="none">
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label" for="table-form-capacity" data-i18n="th_capacity">Kapasidade</label>
+            <input type="number" inputmode="numeric" class="form-control" id="table-form-capacity" min="1" max="50" placeholder="4">
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="table-form-sort" data-i18n="category_sort">Ordem</label>
+            <input type="number" class="form-control" id="table-form-sort" value="0">
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label" for="new-user-password"><span data-i18n="label_password">Liafuan xave</span> *</label>
-          <input type="password" class="form-control" id="new-user-password" required minlength="8" autocomplete="new-password">
-          <div class="form-text" data-i18n="password_hint">Mínimu karakter 8, la bele komún liu.</div>
+        <div class="mb-3" id="table-form-status-wrap">
+          <label class="form-label" for="table-form-status" data-i18n="th_current_status">Status</label>
+          <select class="form-select" id="table-form-status">
+            <option value="AVAILABLE" data-i18n="table_status_available">Disponível</option>
+            <option value="MAINTENANCE" data-i18n="table_status_unavailable">La disponível</option>
+          </select>
+          <div class="form-text" id="table-form-status-hint" data-i18n="table_status_hint">Meza la disponível labele loke sesaun.</div>
         </div>
-        <label class="form-label" for="new-user-role" data-i18n="label_role">Papél</label>
-        <select class="form-select" id="new-user-role">
-          <option value="CASHIER" selected data-i18n="role_cashier">Kaixa</option>
-          <option value="KITCHEN" data-i18n="role_kitchen">Dapur</option>
-          <option value="ADMIN" data-i18n="role_admin">Admin</option>
-        </select>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="table-form-active" checked>
+          <label class="form-check-label" for="table-form-active" data-i18n="table_active_label">Ativu (QR funsiona)</label>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
-        <button type="submit" class="btn btn-primary" id="btn-create-user"><span data-i18n="btn_create_account_now">Kria konta</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-save-table"><span data-i18n="save">Rai</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Staff form (create / edit) -->
+<div class="modal fade modal-sheet" id="staffModal" tabindex="-1" aria-labelledby="staff-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <form class="modal-content" id="staff-form" onsubmit="event.preventDefault(); submitStaffForm();" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="staff-modal-title">Staff</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="staff-id" value="">
+        <div class="callout tone-info mb-3" id="staff-self-hint" hidden>
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <div data-i18n="staff_self_hint">Ne'e ita-boot nia konta rasik. Papél no status labele muda.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="staff-form-fullname" data-i18n="label_fullname">Naran kompletu</label>
+          <input type="text" class="form-control" id="staff-form-fullname" maxlength="150" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="staff-form-username"><span data-i18n="label_username">Naran-uzuáriu</span> *</label>
+          <input type="text" class="form-control" id="staff-form-username" required maxlength="150" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="staff-form-password"><span data-i18n="label_password">Liafuan xave</span> <span id="staff-password-required">*</span></label>
+          <div class="password-field">
+            <input type="password" class="form-control" id="staff-form-password" minlength="8" autocomplete="new-password">
+            <button type="button" class="password-toggle" onclick="toggleStaffPassword(this)" aria-label="Haree liafuan xave" data-i18n-title="toggle_pw_title" title="Haree liafuan xave"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+          </div>
+          <div class="form-text" id="staff-form-password-hint" data-i18n="password_hint">Mínimu karakter 8, labele komún liu.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="staff-form-role" data-i18n="label_role">Papél</label>
+          <select class="form-select" id="staff-form-role">
+            <option value="CASHIER" data-i18n="role_cashier">Kaixa</option>
+            <option value="KITCHEN" data-i18n="role_kitchen">Dapur</option>
+            <option value="ADMIN" data-i18n="role_admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-check form-switch" id="staff-active-wrap" hidden>
+          <input class="form-check-input" type="checkbox" role="switch" id="staff-form-active" checked>
+          <label class="form-check-label" for="staff-form-active" data-i18n="staff_active_label">Ativu (bele login)</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-save-staff"><span data-i18n="save">Rai</span></button>
       </div>
     </form>
   </div>
@@ -521,5 +639,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/charts.js' %}"></script>
+<script src="{% static 'js/admin-overview.js' %}"></script>
 <script src="{% static 'js/admin.js' %}"></script>
 {% endblock %}

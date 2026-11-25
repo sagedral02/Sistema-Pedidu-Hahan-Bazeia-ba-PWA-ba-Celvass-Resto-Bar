@@ -89,6 +89,16 @@
     const trigger = event.target.closest('[data-panel]');
     if (!trigger) return;
     event.preventDefault();
+
+    // Standalone pages (e.g. reports) share the portal navigation. When the panel is not on this
+    // page, go to the portal that owns it.
+    const home = document.body.dataset.panelHome;
+    if (home && !document.getElementById(trigger.dataset.panel)) {
+      const view = trigger.dataset.view ? '/' + trigger.dataset.view : '';
+      window.location.href = home + '#' + trigger.dataset.panel + view;
+      return;
+    }
+
     const changed = showPanel(trigger.dataset.panel, trigger.dataset.view);
     const sheet = trigger.closest('.offcanvas');
     if (sheet && window.bootstrap) {

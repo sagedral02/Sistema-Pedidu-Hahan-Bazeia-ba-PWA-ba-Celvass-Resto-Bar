@@ -28,6 +28,10 @@ def list_tables_with_status():
         'sessions', 'activation_requests'
     ).order_by('sort_order', 'table_code')
 
+def list_all_tables_for_admin():
+    """All tables including inactive ones, for the admin table manager."""
+    return RestaurantTable.objects.all().prefetch_related('sessions').order_by('-is_active', 'sort_order', 'table_code')
+
 def get_pending_activation_requests_for_restaurant(restaurant=None) -> List[TableActivationRequest]:
     try:
         qs = TableActivationRequest.objects.filter(status=ActivationRequestStatus.PENDING).select_related('table')

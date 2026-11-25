@@ -41,6 +41,11 @@ urlpatterns = [
     path('admin/menu-items/', views.AdminMenuItemListCreateAPIView.as_view(), name='api-admin-menu-items-list-create'),
     path('admin/menu-items/<uuid:item_id>/', views.AdminMenuItemDetailAPIView.as_view(), name='api-admin-menu-item-detail'),
     path('admin/menu-items/<uuid:item_id>/toggle-availability/', views.AdminToggleMenuItemAvailabilityAPIView.as_view(), name='api-admin-toggle-menu'),
+    path('admin/tables/', views.AdminTableListCreateAPIView.as_view(), name='api-admin-tables-list-create'),
+    path('admin/tables/<uuid:table_id>/', views.AdminTableDetailAPIView.as_view(), name='api-admin-table-detail'),
     path('admin/tables/<uuid:table_id>/rotate-qr/', views.AdminRotateTableQRAPIView.as_view(), name='api-admin-rotate-qr'),
-    path('admin/users/create/', views.AdminUserCreateAPIView.as_view(), name='api-admin-user-create'),
+    path('admin/overview/', views.AdminOverviewAPIView.as_view(), name='api-admin-overview'),
+    path('admin/users/', views.AdminUserListCreateAPIView.as_view(), name='api-admin-users-list-create'),
+    path('admin/users/create/', views.AdminUserListCreateAPIView.as_view(), name='api-admin-user-create'),
+    path('admin/users/<uuid:user_id>/', views.AdminUserDetailAPIView.as_view(), name='api-admin-user-detail'),
 ]

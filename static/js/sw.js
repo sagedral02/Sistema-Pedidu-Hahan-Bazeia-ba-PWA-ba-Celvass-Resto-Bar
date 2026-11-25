@@ -5,7 +5,7 @@
  *  - Customer pages (/, /t/...): network-first, cached copy used only when offline.
  *  - Staff portals, login/logout, API and WebSocket: never cached or intercepted.
  */
-const VERSION = 'v4';
+const VERSION = 'v6';
 const STATIC_CACHE = `celvass-static-${VERSION}`;
 const PAGE_CACHE = `celvass-pages-${VERSION}`;
 const OFFLINE_URL = '/offline/';
@@ -32,7 +32,7 @@ const PRECACHE = [
   '/static/icons/icon-512.png',
 ];
 
-const NEVER_CACHE_PREFIXES = ['/api/', '/ws/', '/admin/', '/admin-portal/', '/cashier/', '/kitchen/', '/login/', '/logout/', '/demo-login/', '/sw.js'];
+const NEVER_CACHE_PREFIXES = ['/api/', '/ws/', '/admin/', '/admin-portal/', '/cashier/', '/kitchen/', '/reports/', '/login/', '/logout/', '/demo-login/', '/sw.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

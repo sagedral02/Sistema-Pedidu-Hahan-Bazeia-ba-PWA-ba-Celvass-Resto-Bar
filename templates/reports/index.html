@@ -1,0 +1,185 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Relatóriu - {{ current_restaurant.name }}{% endblock %}
+{% block role %}{% if user.is_admin %}admin{% else %}cashier{% endif %}{% endblock %}
+{% block default_panel %}reports-panel{% endblock %}
+{% block panel_home %}{% if user.is_admin %}{% url 'admin-portal' %}{% else %}{% url 'cashier-portal' %}{% endif %}{% endblock %}
+
+{% block topbar %}{% if user.is_admin %}{% include 'base/_nav_admin.html' %}{% else %}{% include 'base/_nav_cashier.html' %}{% endif %}{% endblock %}
+{% block tabbar %}{% if user.is_admin %}{% include 'base/_tabbar_admin.html' %}{% else %}{% include 'base/_tabbar_cashier.html' %}{% endif %}{% endblock %}
+
+{% block content %}
+<section class="app-panel" id="reports-panel" aria-labelledby="reports-title">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="reports-title" data-i18n="reports">Relatóriu</h1>
+      <p class="page-subtitle" data-i18n="rpt_page_desc">Haree vendas no atividade restaurante, depois download CSV ka PDF.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-secondary-app" id="rpt-download-csv" href="{% url 'reports-export' %}?format=csv" download><i class="fa-solid fa-file-csv" aria-hidden="true"></i><span data-i18n="rpt_btn_csv">Download CSV</span></a>
+      <a class="btn btn-primary" id="rpt-download-pdf" href="{% url 'reports-export' %}?format=pdf" download><i class="fa-solid fa-file-pdf" aria-hidden="true"></i><span data-i18n="rpt_btn_pdf">Download PDF</span></a>
+    </div>
+  </div>
+
+  <div class="segmented mb-3" role="tablist" aria-label="Relatóriu">
+    <button type="button" role="tab" class="is-active" id="rpt-tab-summary" data-tab="summary" aria-selected="true" aria-controls="rpt-pane-summary"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> <span data-i18n="rpt_tab_summary">Rezumu</span></button>
+    <button type="button" role="tab" id="rpt-tab-history" data-tab="history" aria-selected="false" aria-controls="rpt-pane-history"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> <span data-i18n="rpt_tab_history">Istóriku</span></button>
+  </div>
+
+  <div class="surface surface-pad mb-3">
+    <form id="rpt-form" class="row g-3 align-items-end" novalidate>
+      <div class="col-12 col-md-5 col-lg-4" id="rpt-summary-controls">
+        <label class="form-label" for="rpt-type" data-i18n="rpt_label_report">Tipu relatóriu</label>
+        <select class="form-select" id="rpt-type" name="type">
+          <option value="daily_sales" data-i18n="rpt_type_daily_sales">Vendas loron-loron</option>
+          <option value="menu_sales" data-i18n="rpt_type_menu_sales">Vendas tuir menu</option>
+          <option value="payment_methods" data-i18n="rpt_type_payment_methods">Métodu pagamentu</option>
+          <option value="cashiers" data-i18n="rpt_type_cashiers">Tuir kaixa</option>
+          <option value="exceptions" data-i18n="rpt_type_exceptions">Rekuza, kansela no anula</option>
+          <option value="table_usage" data-i18n="rpt_type_table_usage">Uza meza</option>
+        </select>
+      </div>
+
+      <div class="col-12" id="rpt-history-controls" hidden>
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-lg-auto">
+            <div class="segmented" role="group" aria-label="Istóriku">
+              <button type="button" class="is-active" data-kind="orders" aria-pressed="true"><span data-i18n="rpt_sub_orders">Pedidu</span></button>
+              <button type="button" data-kind="transactions" aria-pressed="false"><span data-i18n="rpt_sub_transactions">Transasaun</span></button>
+            </div>
+          </div>
+          <div class="col-6 col-md-3 col-lg-2">
+            <label class="form-label" for="rpt-h-status" data-i18n="rpt_filter_status">Status</label>
+            <select class="form-select form-select-sm" id="rpt-h-status"></select>
+          </div>
+          <div class="col-6 col-md-3 col-lg-2" id="rpt-h-source-wrap">
+            <label class="form-label" for="rpt-h-source" data-i18n="rpt_filter_source">Orijen</label>
+            <select class="form-select form-select-sm" id="rpt-h-source"></select>
+          </div>
+          <div class="col-6 col-md-3 col-lg-2" id="rpt-h-method-wrap" hidden>
+            <label class="form-label" for="rpt-h-method" data-i18n="rpt_filter_method">Métodu</label>
+            <select class="form-select form-select-sm" id="rpt-h-method"></select>
+          </div>
+          {% if cashier_choices %}
+          <div class="col-6 col-md-3 col-lg-2" id="rpt-h-cashier-wrap">
+            <label class="form-label" for="rpt-h-cashier" data-i18n="rpt_filter_cashier">Kaixa</label>
+            <select class="form-select form-select-sm" id="rpt-h-cashier">
+              <option value="" data-i18n="rpt_all_cashiers">Kaixa hotu</option>
+              {% for c in cashier_choices %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-12 col-md-6 col-lg">
+            <label class="form-label visually-hidden" for="rpt-h-search" data-i18n="rpt_search_placeholder">Buka kódigu, meza ka menu</label>
+            <div class="search-field">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" class="form-control form-control-sm" id="rpt-h-search" maxlength="80" autocomplete="off" placeholder="Buka kódigu, meza ka menu" data-i18n-placeholder="rpt_search_placeholder">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <span class="form-label d-block" id="rpt-period-label" data-i18n="rpt_label_period">Períodu</span>
+        <div class="chip-row" role="group" aria-labelledby="rpt-period-label">
+          <button type="button" class="chip active" data-preset="today" aria-pressed="true"><span data-i18n="rpt_period_today">Ohin</span></button>
+          <button type="button" class="chip" data-preset="7days" aria-pressed="false"><span data-i18n="rpt_period_7days">Loron 7 ikus</span></button>
+          <button type="button" class="chip" data-preset="month" aria-pressed="false"><span data-i18n="rpt_period_month">Fulan ne'e</span></button>
+          <button type="button" class="chip" data-preset="custom" aria-pressed="false"><span data-i18n="rpt_period_custom">Data rasik</span></button>
+        </div>
+      </div>
+      <div class="col-12" id="rpt-custom" hidden>
+        <div class="row g-2 align-items-end">
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="rpt-start" data-i18n="rpt_label_from">Husi</label>
+            <input type="date" class="form-control" id="rpt-start" name="start" value="{{ today }}" max="{{ today }}">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="rpt-end" data-i18n="rpt_label_to">To'o</label>
+            <input type="date" class="form-control" id="rpt-end" name="end" value="{{ today }}" max="{{ today }}">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button type="submit" class="btn btn-primary w-100"><i class="fa-solid fa-check" aria-hidden="true"></i><span data-i18n="rpt_btn_apply">Aplika</span></button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="alert alert-danger" id="rpt-error" role="alert" hidden></div>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <span class="text-tertiary fs-7" id="rpt-period"></span>
+    <span class="badge-soft tone-info" id="rpt-scope" hidden><i class="fa-solid fa-user" aria-hidden="true"></i><span data-i18n="rpt_scope_own">Dadus ita-nia rasik deit</span></span>
+  </div>
+
+  <!-- Summary tab -->
+  <div id="rpt-pane-summary" role="tabpanel" aria-labelledby="rpt-tab-summary">
+    <div class="kpi-grid mb-3" id="rpt-summary"></div>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table table-app table-hover table-stack" id="rpt-table">
+          <thead id="rpt-head"></thead>
+          <tbody id="rpt-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="text-tertiary fs-7 mt-2 mb-0" id="rpt-drill-hint" data-i18n="rpt_drill_hint" hidden>Klik liña atu haree detallu.</p>
+  </div>
+
+  <!-- History tab -->
+  <div id="rpt-pane-history" role="tabpanel" aria-labelledby="rpt-tab-history" hidden>
+    <div class="kpi-grid mb-3" id="rpt-h-kpi"></div>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table table-app table-hover table-stack" id="rpt-h-table">
+          <thead id="rpt-h-head"></thead>
+          <tbody id="rpt-h-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <nav class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" id="rpt-h-pager" aria-label="Pagination" hidden>
+      <span class="text-tertiary fs-7" id="rpt-h-pageinfo"></span>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-secondary-app" id="rpt-h-prev"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i><span data-i18n="rpt_btn_prev">Antes</span></button>
+        <button type="button" class="btn btn-sm btn-secondary-app" id="rpt-h-next"><span data-i18n="rpt_btn_next">Tuir mai</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+      </div>
+    </nav>
+  </div>
+</section>
+{% endblock %}
+
+{% block overlays %}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="rptDetail" aria-labelledby="rptDetailTitle" style="--bs-offcanvas-width:min(520px,100vw)">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title fs-6 fw-bold" id="rptDetailTitle" data-i18n="rpt_detail_order">Detallu pedidu</h2>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Taka" data-i18n-title="close"></button>
+  </div>
+  <div class="offcanvas-body" id="rpt-detail-body"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.CELVASS_RESTAURANT = {
+    name: "{{ current_restaurant.name|escapejs }}",
+    address: "{{ current_restaurant.address|default:''|escapejs }}",
+    phone: "{{ current_restaurant.phone|default:''|escapejs }}"
+  };
+  window.CELVASS_REPORTS = {
+    dataUrl: "{% url 'reports-data' %}",
+    exportUrl: "{% url 'reports-export' %}",
+    historyUrls: {
+      orders: "{% url 'reports-history-orders' %}",
+      transactions: "{% url 'reports-history-transactions' %}"
+    },
+    restaurant: "{{ current_restaurant.name|escapejs }}",
+    maxRangeDays: {{ max_range_days }},
+    isAdmin: {% if is_admin_view %}true{% else %}false{% endif %}
+  };
+</script>
+<script src="{% static 'js/receipt.js' %}"></script>
+<script src="{% static 'js/reports.js' %}"></script>
+<script src="{% static 'js/reports-history.js' %}"></script>
+{% endblock %}
