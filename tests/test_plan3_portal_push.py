@@ -98,9 +98,25 @@ def test_staff_on_a_claimed_table_sees_the_occupied_page_instead_of_a_broken_men
     res = c.get(f'/t/{table_one.qr_token}/')
     assert res.status_code == 403
     html = res.content.decode()
-    assert 'occupied_staff_note' in html and reverse('cashier-portal') in html
+    assert 'occupied_cashier_note' in html and reverse('cashier-portal') in html
+    assert '#pos-panel/takeaway' in html and 'occupied_open_takeaway' in html
+    assert 'occupied_view_menu' not in html
     active_session.refresh_from_db()
     assert active_session.primary_device_token == 'owner'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('user_fixture', ['admin_user', 'kitchen_user'])
+def test_admin_and_kitchen_on_an_occupied_table_get_no_scanner_or_pos(active_session, table_one, user_fixture,
+                                                                       request):
+    assert device('owner').get(f'/t/{table_one.qr_token}/').status_code == 200
+    c = device('staff-phone')
+    c.force_login(request.getfixturevalue(user_fixture))
+    res = c.get(f'/t/{table_one.qr_token}/')
+    assert res.status_code == 403
+    html = res.content.decode()
+    assert 'occupied_inside_note' in html and 'occupied_view_menu' in html
+    assert 'data-qr-scan' not in html and reverse('cashier-portal') not in html
 
 
 def test_customer_script_never_reloads_without_the_guard():

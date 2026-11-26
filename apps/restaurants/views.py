@@ -62,6 +62,7 @@ def customer_dine_in_view(request, qr_token=None):
                 'table': table,
                 'session': session,
                 'is_staff_preview': is_staff_preview,
+                'staff_role': getattr(request.user, 'role', '') if is_staff_preview else '',
             }, status=403)
             return _attach_device_cookie(request, response, device_token)
         # Staff opening the table link from a portal only preview it: they never claim

@@ -435,8 +435,8 @@ def test_chart_module_handles_degenerate_data(page, live_server, ui_admin, resta
 def test_chart_ships_a_hidden_data_table_for_screen_readers(page, live_server, ui_admin, overview_data):
     _login(page, live_server, ui_admin)
     _open(page, live_server)
-    table = page.locator('#ov-methods table.visually-hidden')
+    table = page.locator('#ov-methods .visually-hidden table')
     assert table.count() == 1
     text = table.inner_text()
     assert 'Cash' in text and '$20.00' in text and 'Card / Transfer' in text
-    assert page.locator('#ov-hours table.visually-hidden tbody tr').count() == 24
+    assert page.locator('#ov-hours .visually-hidden table tbody tr').count() == 24

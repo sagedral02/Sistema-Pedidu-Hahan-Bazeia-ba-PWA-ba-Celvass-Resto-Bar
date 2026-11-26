@@ -20,7 +20,11 @@
     {% if is_staff_preview %}
       <div class="callout tone-info mb-3" id="occupied-staff-note">
         <i class="fa-solid fa-user-tie" aria-hidden="true"></i>
-        <div data-i18n="occupied_staff_note">Ita tama hanesan staff. Jere meza ne'e husi portal Kaixa (POS).</div>
+        {% if staff_role == 'CASHIER' %}
+          <div data-i18n="occupied_cashier_note">Ita tama hanesan Kaixa. Meza ne'e okupadu hela, entaun bele uza Take away atu halo pedidu.</div>
+        {% else %}
+          <div data-i18n="occupied_inside_note">Ita tama hanesan staff restaurante. Se hakarak halo pedidu, bele liuhusi Take away iha Kaixa.</div>
+        {% endif %}
       </div>
     {% else %}
       <div class="callout tone-info mb-3">
@@ -33,16 +37,22 @@
     {% endif %}
 
     <div class="d-grid gap-2">
+      {% if is_staff_preview and staff_role != 'CASHIER' %}
+        {# Admin and kitchen are in-house staff: no scanner or POS shortcut, only the menu #}
+        <a class="btn btn-secondary-app" href="/"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span data-i18n="occupied_view_menu">Haree menu</span></a>
+      {% else %}
       <button type="button" class="btn btn-primary" data-qr-scan><i class="fa-solid fa-camera" aria-hidden="true"></i><span data-i18n="qr_scan_other">Skanu QR meza seluk</span></button>
       {% if is_staff_preview %}
         <a class="btn btn-secondary-app" href="{% url 'cashier-portal' %}#pos-panel/tables"><i class="fa-solid fa-cash-register" aria-hidden="true"></i><span data-i18n="occupied_open_pos">Loke POS Kaixa</span></a>
+        <a class="btn btn-secondary-app" href="{% url 'cashier-portal' %}#pos-panel/takeaway"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i><span data-i18n="occupied_open_takeaway">Loke Take away</span></a>
       {% else %}
         {% with r=current_restaurant %}
           {% if r.whatsapp_link %}<a class="btn btn-success" href="{{ r.whatsapp_link }}" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><span data-i18n="occupied_contact_cashier">Kontaktu Kaixa</span></a>
           {% elif r.tel_link %}<a class="btn btn-secondary-app" href="{{ r.tel_link }}"><i class="fa-solid fa-phone" aria-hidden="true"></i><span data-i18n="occupied_contact_cashier">Kontaktu Kaixa</span></a>{% endif %}
         {% endwith %}
+        <a class="btn btn-secondary-app" href="/"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span data-i18n="occupied_view_menu">Haree menu</span></a>
       {% endif %}
-      <a class="btn btn-secondary-app" href="/"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span data-i18n="occupied_view_menu">Haree menu</span></a>
+      {% endif %}
     </div>
   </div>
 </div>
