@@ -1,247 +1,172 @@
 <div align="center">
 
-# 🍽️ CELVAS-PWA
+# 🍽️ CELVASS PWA
 
 ### Sistema Pedidu Hahan Bazeia ba PWA ba Celvass Resto & Bar
 
-### *(Progressive Web App-Based Food and Beverage Ordering System for Celvass Resto & Bar)*
+*(Progressive Web App-Based Food and Beverage Ordering System for Celvass Resto & Bar)*
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-5.2%20LTS-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
-[![Django REST Framework](https://img.shields.io/badge/DRF-3.18-red?logo=django&logoColor=white)](https://www.django-rest-framework.org/)
-[![Channels & WebSockets](https://img.shields.io/badge/Channels-4.3%20%2B%20Redis-blue)](https://channels.readthedocs.io/)
-[![PWA](https://img.shields.io/badge/PWA-Offline%20%2B%20Service%20Worker-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Neon](https://img.shields.io/badge/Neon-PostgreSQL-00E599?logo=postgresql&logoColor=white)](https://console.neon.tech)
-[![Vercel Deployment](https://img.shields.io/badge/Vercel-celvass--pwa.vercel.app-black?logo=vercel&logoColor=white)](https://celvass-pwa.vercel.app)
-[![Versaun](https://img.shields.io/badge/Versaun-2.1.0-blue)](https://github.com/sagedral02/Sistema-Pedidu-Hahan-Bazeia-ba-PWA-ba-Celvass-Resto-Bar)
+[![DRF](https://img.shields.io/badge/DRF-3.18-red)](https://www.django-rest-framework.org/)
+[![Channels](https://img.shields.io/badge/Channels-4.3-blue)](https://channels.readthedocs.io/)
+[![PWA](https://img.shields.io/badge/PWA-Web%20Push%20%2B%20Offline-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+[![Vercel](https://img.shields.io/badge/Vercel-celvass--pwa.vercel.app-black?logo=vercel&logoColor=white)](https://celvass-pwa.vercel.app)
+[![Versaun](https://img.shields.io/badge/Versaun-3.0.0-blue)](prd.md)
 ![Lisensa](https://img.shields.io/badge/Lisensa-MIT-green)
-
-*Pedidu Lalais. Servisu Di'ak. Esperiénsia Modernu.*
 
 </div>
 
 ---
 
-## 📖 Kona-ba Celvass Resto & Bar PWA
+## 📖 Kona-ba projetu
 
-**Celvass Resto & Bar PWA** mak sistema dijitál ba pedidu hahan no hemu (*dine-in ordering system*) bazeia ba **Progressive Web Application (PWA)** ne'ebé dezenvolve espesifikamente ba **Celvass Resto & Bar** (Av. de Portugal, Praia dos Coqueiros, Dili, Timor-Leste).
+**Celvass PWA** mak aplikasaun web ne'ebé bele instala (PWA) ba restorante **Celvass Resto & Bar** (Praia dos Coqueiros, Dili). Kliente haree menu iha pájina prinsipál, skanu QR iha meza, no halo pedidu husi sira-nia telemóvel rasik la presiza konta. Kaixa verifika pedidu molok tama dapur, simu pagamentu osan-mean (USD), no jere meza. Dapur haree fila tuir item. Admin jere menu, kuota, meza, staff, konfigurasaun restorante, no relatóriu.
 
-Sistema ne'e fasilita kliente sira atu scan QR Code dinámiku iha kada meja, haree lista menu ho lian haat (Tetun, Português, English, no Bahasa Indonesia), hili variante hahan, no haruka pedidu direta husi smartphone la presiza download aplikasaun husi Play Store ka App Store.
+Lian 4: **Tetun** (default), **Português**, **English**, **Bahasa Indonesia**.
 
-Plataforma ne'e integra **Cashier Verification Gate** (*gerbang verifikasi kasir*) ne'ebé estritu atu asegura katak pedidu hotu tenke hetan validasaun husi kasir antes tama ba koziña (KDS), prevene pedidu falsu ka spam, jestaun split-bill no troka osan iha moeda Dólar Amerikanu (**USD $**), no sinkronizasaun dadus *real-time* liu husi WebSockets.
+Dokumentu kompletu ba regra negósiu, state machine, API no arkitetura: **[`prd.md`](prd.md)**.
 
 ---
 
-## 🚀 Kapasidade Prinsipál
+## 🚀 Funsionalidade tuir portal
 
-| Área | Kapasidade |
+| Portal | Saida mak iha |
 |---|---|
-| 📱 Kliénte & PWA | Scan QR meja, menu interativu, offline catalog caching, sesta/cart, multi-idioma (Tetun, PT, EN, ID), instalavel (A2HS) |
-| 🛡️ Cashier Gate | Verifikasaun pedidu foun antes tama koziña, aprova/rejeita ho razaun, jestaun sesaun meja |
-| 🍳 Koziña (KDS) | Painél Kitchen Display System real-time, audio alert bainhira pedidu tama, tranzisaun estatutu (`PREPARING` ➔ `READY` ➔ `SERVED`) |
-| 💵 Kaixa & Pagamentu | Pagamentu Cash (kalkulasaun automatiku osan simu & troka), Card/QR dijitál, emisaun resibu no invoice print |
-| 📋 Menu & Katálogu | Kategoria, menu item, jestaun disponibilidade (*in-stock* / *out-of-stock*), presu autoritativu 100% husi servidór |
-| 🪑 Meja & Sesaun | QR token seguru kada meja, kontrolu sesaun ativu, limitasaun pedidu pendente ba seguransa husi spam |
-| 📡 Real-Time & Event | WebSockets (Django Channels + Redis) ba atualizasaun instantáneu entre Kliénte, Kasir, no Koziña sem refresh |
-| 📨 Transactional Outbox | Outbox pattern ba fiabilidade mensajen no event dispatch sem lakon dadus transasaun |
-| 🔐 Seguransa & RBAC | Role-Based Access (Admin, Cashier, Kitchen), device lock ho cookie httpOnly, CSRF, Idempotency-Key ba prevensaun double-order |
-| 📊 Auditoria & Relatóriu | Audit trail kompletu ba kada mudansa estatutu no movimentu osan, relatóriu vendas diáriu no analítika menu |
-| 🐳 Operasaun & Infra | Docker Compose (Daphne ASGI + Redis + Postgres + Nginx), SQLite fallback ba ambiente dezenvolvimentu |
+| **Pájina prinsipál `/`** | Logo, deskrisaun, status loke/taka no oras ohin, butaun **Skanu QR meza**, menu atu haree de'it (kategoria, buka, rating, pedidu barak liu, rekomendasaun), kontaktu (WhatsApp, telefone, email, website, sosiál), mapa Google Maps no oras loke semana nian |
+| **Kliente `/t/<qr>/`** | Hatama ema nain hira (tuir kapasidade meza) → husu loke meza → katálogu ho karreta → tuir pedidu tuir item → husu konta → pájina obrigadu ho rating ba hahan ida-idak. Telemóvel seluk haree pájina **Meza okupadu** (la iha reload la para). Butaun **Ativa notifikasaun** (Web Push). |
+| **Kaixa `/cashier/`** | **POS**: fila (pedidu loke meza + pedidu hein), kartaun meza (Loke sesaun → Pedidu → Request bill + **+**), detalle pedidu ho status item, take away. **Atendimentu**: Konta (selu iha ne'e de'it), Info dapur, **Meza la iha atividade**. **Menu & Stok**, **Turnu** (kaixa loke/taka), **Relatóriu**. Gembok: *Taka normál* ka *Bainaka sai la selu* (ho razaun, rejista lakon). |
+| **Dapur `/kitchen/`** | Fila tuir item (hein / tein / prontu), aksaun ba item ka pedidu tomak, marka **la iha** ho razaun |
+| **Admin `/admin-portal/`** | Rezumu (KPI + gráfiku: vendas, vizitante, la selu…), Katálogu (menu, kuota inline, rating no review), Meza & QR, Staff, **Konfigurasaun** (logo = ikone PWA, kontaktu, mapa, oras loke, taxa, nota rekibu, minutu alerta meza la iha atividade), Relatóriu |
+| **Relatóriu `/reports/`** | Rezumu (vendas loron-loron, menu, tipu pedidu, kaixa, rekuza/kansela/anula/sai la selu, uza meza, turnu, vizitante), Istóriku (pedidu + transasaun), Audit. Esporta CSV no PDF. |
 
 ---
 
-## 🏗️ Arkitetura Badak
+## 🏗️ Arkitetura
 
 ```text
-Kliénte (Mobile PWA / Scan QR Meja)
-             │
-             ▼
-        [REST API] ──► Idempotency-Key + Validasaun Presu (Server-Authoritative)
-             │
-             ▼
-   [Estatutu: SUBMITTED]
-             │
-             ▼
-  ┌─────────────────────────┐
-  │  Cashier Gate (Kaixa)   │ ──► [Rejeita] ──► Notifika Kliénte
-  └──────────┬──────────────┘
-             │ (Aprova / Confirma)
-             ▼
-   [Estatutu: CONFIRMED]
-             │
-             ├──► [Transactional Outbox] ──► WebSocket Broadcast (Redis)
-             │
-             ▼
-   ┌───────────────────────┐
-   │ Koziña KDS Painél     │ ──► Audio Chime Alert + Live Ticket
-   └──────────┬────────────┘
-              │ (PREPARING ──► READY ──► SERVED)
-              ▼
-      Kaixa / Pagamentu (Cash / Digital USD $)
-              │
-              ▼
-   [Estatutu: COMPLETED] ──► Imprime Resibu & Audit Trail
+Browser / PWA (vanilla JS + Bootstrap, service worker v11, Web Push, skaner QR)
+      │ HTTPS REST (/api/v1/)          │ WSS (/ws/)
+      ▼                                ▼
+Django 5.2 + DRF  ──  service layer (transaction.atomic + select_for_update)
+      │                     └─ Outbox ─► WebSocket (Channels) + Web Push (pywebpush)
+      ▼
+PostgreSQL (produsaun) / SQLite (lokál)  ·  Redis (channel layer produsaun)
 ```
 
----
-
-## 🛠️ Tech Stack
-
-| Kategoria | Teknolojia |
+| App | Responsabilidade |
 |---|---|
-| Linguajen | Python `3.11+`, JavaScript (ES6+ Vanilla PWA) |
-| Backend Framework | Django `5.2 LTS`, Django REST Framework `3.18` |
-| Real-time & Asínkrona | Django Channels `4.3`, Daphne ASGI `4.2`, Redis `7` |
-| Frontend & PWA | HTML5 Semántiku, CSS3 Modernu, Service Worker, Web App Manifest |
-| Baze de Dadus | PostgreSQL `16+` (Production), SQLite3 (Development / Testing) |
-| Event & Concurrency | Celery `5.6`, Transactional Outbox Pattern |
-| Seguransa & Auth | Custom RBAC (4 Roles), Session Auth, Idempotency-Key, CSRF |
-| Operasaun & Deploy | Docker Compose, Nginx, Daphne, WhiteNoise, Pytest |
+| `accounts` | Utilizadór ho papél ADMIN / CASHIER / KITCHEN |
+| `restaurants` | Restorante, oras loke, logo/ikone, pájina kliente no portal |
+| `tables` | Meza, sesaun, device lock, pedidu loke meza, take away, progresu kartaun, *walkout*, meza la iha atividade |
+| `catalog` | Kategoria, menu, kuota loron-loron, taka ohin, rating, highlight |
+| `ordering` / `kitchen` | Pedidu, status tuir item, info dapur |
+| `payments` / `shifts` | Konta, pagamentu osan-mean, rekibu, turnu kaixa |
+| `reporting` / `audit` | Rezumu, relatóriu, istóriku, esporta, audit log |
+| `outbox` / `realtime` / `pwa` | Event, WebSocket, manifest, service worker, ikone, Web Push |
 
 ---
 
-## ⚙️ Instalasaun Lalais
+## ⚙️ Instalasaun lokál
 
-### Pre-rekizitu
-
-- Python `3.11+` no `pip`;
-- Git;
-- Redis (ba ambiente WebSockets / Channels);
-- PostgreSQL `16+` (ba produsaun) ka SQLite3 (ba dezenvolvimentu lokál).
-
-### 1. Klonen Repozitóriu
+Pre-rekizitu: Python 3.12, Git. (Redis no PostgreSQL ba produsaun de'it.)
 
 ```bash
 git clone https://github.com/sagedral02/Sistema-Pedidu-Hahan-Bazeia-ba-PWA-ba-Celvass-Resto-Bar.git
 cd Sistema-Pedidu-Hahan-Bazeia-ba-PWA-ba-Celvass-Resto-Bar
-```
 
-### 2. Ambiente Virtuál & Dependénsia
-
-```bash
-# Kria no ativa ambiente virtuál
 python -m venv .venv
-
-# Windows (PowerShell):
+# Windows (PowerShell)
 .venv\Scripts\Activate.ps1
-
-# Linux / macOS:
+# Linux / macOS
 source .venv/bin/activate
 
-# Instala package sira
 pip install -r requirements/dev.txt
-```
+copy .env.example .env        # Linux/macOS: cp .env.example .env
 
-### 3. Konfigura Variável Ambiente (.env)
-
-```bash
-cp .env.example .env
-```
-
-Ajusta valór iha `.env` tuir nesesidade lokál ka produsaun:
-
-```env
-DJANGO_SETTINGS_MODULE=config.settings.local
-SECRET_KEY=sua-chave-secreta-lokal-12345
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-DATABASE_URL=sqlite:///db.sqlite3
-DEFAULT_CURRENCY=USD
-TIME_ZONE=Asia/Dili
-RESTAURANT_NAME=Celvass Resto & Bar
-```
-
-### 4. Migrasaun & Seed Demo Data
-
-Exekuta migrasaun baze de dadus no komandu `seed_demo` atu kria perfil restorante, konta utilizadór, mejas, kategoria, no menu sira:
-
-```bash
 python manage.py migrate
-python manage.py seed_demo
+python manage.py seed_demo              # restorante, staff, meza, menu demo
+python manage.py generate_brand_icons   # ikone default (garfu no faka)
+python manage.py runserver 127.0.0.1:8000
 ```
 
-### 5. Halai Servidór
+WebSocket ho Daphne: `daphne -b 127.0.0.1 -p 8000 config.asgi:application`.
 
-Akompanha ho Daphne ASGI atu suporta funsionalidade WebSockets:
+### Variável ambiente
+
+| Variável | Uza ba |
+|---|---|
+| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `DATABASE_URL`, `REDIS_URL` | Django no baze de dadus |
+| `CUSTOMER_HOME_URL` | Fatin kliente ba depois pájina obrigadu (ez. `https://celvass-pwa.vercel.app/`) |
+| `BUSINESS_DAY_START_HOUR` | Oras loron negósiu hahú (kuota no numeru take away reset) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web Push. Kria ho `python manage.py generate_vapid_keys`. Mamuk = push desliga. |
+| `PUSH_ASYNC` | `1` (default) haruka push iha thread seluk |
+
+### Komandu útil
+
+| Komandu | Funsaun |
+|---|---|
+| `python manage.py seed_demo` | Dadus demo |
+| `python manage.py generate_brand_icons` | Kria ikone PWA default |
+| `python manage.py generate_vapid_keys` | Kria xave Web Push |
+| `python manage.py check_idle_tables` | Haruka alerta meza la iha atividade (uza iha cron, ez. kada minutu 5) |
+| `python manage.py collectstatic --noinput` | Prepara static ba Vercel / produsaun |
+
+---
+
+## 👥 Konta demo (depois `seed_demo`)
+
+| Papél | Username | Password | Portal |
+|---|---|---|---|
+| Admin | `admin` | `admin123` | `/admin-portal/` |
+| Kaixa | `cashier` | `cashier123` | `/cashier/` |
+| Dapur | `kitchen` | `kitchen123` | `/kitchen/` |
+| Kliente | *(la presiza)* | *(skanu QR)* | `/` ka `/t/<qr_token>/` |
+
+> Troka password hotu molok uza iha produsaun.
+
+---
+
+## 📱 PWA
+
+- **Instala** iha Home Screen (manifest `/manifest.json`, ikone husi logo restorante ka garfu-faka default).
+- **Service worker** (`/sw.js`, cache `v11`): aset static rai iha cache, pájina kliente *network-first*. Portal staff, login no API nunka rai iha cache.
+- **Web Push**: kaixa simu pedidu foun / husu konta / meza la iha atividade; dapur simu pedidu foun; kliente simu meza loke, pedidu konfirma, hahan prontu, obrigadu. Permisaun husu de'it bainhira prima butaun. iPhone: tenke instala PWA uluk (iOS 16.4+).
+- **Skaner QR** iha aplikasaun (kamera), aseita de'it link meza husi site ne'e rasik.
+- Vendor hotu (Bootstrap, Font Awesome, font, jsQR) iha `static/vendor/` (la uza CDN).
+
+---
+
+## 🧪 Teste
 
 ```bash
-# Halai ho Daphne ASGI (WebSockets ativu):
-daphne -b 127.0.0.1 -p 8000 config.asgi:application
+# Teste funsionál (la presiza browser)
+python -m pytest -m "not browser" -q
 
-# Ka uza Django runserver ba teste simples:
-python manage.py runserver
+# Teste browser (Playwright, tests/ui/)
+python -m pytest -m browser
+
+# Verifika migrasaun
+python manage.py makemigrations --check --settings=config.settings.test
 ```
 
----
-
-## 👥 Konta Default Demo
-
-Depois de halo `seed_demo`, konta sira tuir mai bele uza direta:
-
-| Role | Username | Password | URL Portal | Funsionál Prinsipál |
-|---|---|---|---|---|
-| **Admin** | `admin` | `admin123` | `/admin-portal/` | Jestaun menu, relatóriu vendas, no QR print sheet |
-| **Cashier (Kaixa)** | `cashier` | `cashier123` | `/cashier/` | Verifika pedidu foun, simu pagamentu, no split-bill |
-| **Kitchen (Koziña)** | `kitchen` | `kitchen123` | `/kitchen/` | Painél KDS, audio alert, atualiza estatutu preparasaun |
-| **Customer (Kliente)** | *(Sem Login)* | *(Scan QR)* | `/t/demo-table-1/` | Hili menu, sesta, no submete pedidu dine-in |
+Teste kobre regra negósiu (cashier gate, device lock, kapasidade meza, oras loke, kuota, status item, konta, osan-mean, turnu, *walkout*, meza la iha atividade), API no permisaun, relatóriu no esporta, label lian 4, template, service worker no Web Push (ho mock).
 
 ---
 
-## 📱 Fitur PWA (Progressive Web App)
+## 🚢 Deploy
 
-- **Offline Capability**: Service Worker (`static/js/sw.js`, servidu iha `/sw.js`) rai CSS, JS, font no ikone (self-hosted iha `static/vendor/`). Pájina kliente (`/`, `/t/...`) uza *network-first* no copy cache foin uza bainhira offline. Portal staff, login/logout no API **nunka** rai iha cache; logout hamoos cache browser (`Clear-Site-Data`).
-- **Web App Manifest (`/manifest.json`)**: Instalavel iha *Home Screen* (standalone), orientasaun livre (`any`) atu KDS no Kaixa bele uza tablet landscape.
-- **Device lock**: Servidór haruka cookie `celvass_device_id` (httpOnly) bainhira loke pájina meza. Sesaun ne'ebé iha ona na'in rejeita telemóvel seluk, inklui pedidu sem cookie.
-- **Multi-Idioma Dinámiku (`i18n.js`)**: Kliente bele muda lian direta iha menu entre **Tetun**, **Português**, **English**, no **Bahasa Indonesia**.
-- **Real-Time Sound System**: Notifikasaun sonoru automatiku iha portal Kaixa no Koziña bainhira pedidu foun tama ka prontu ona.
+| Ambiente | Oinsá |
+|---|---|
+| **Docker** | `docker compose up -d --build` (PostgreSQL, Redis, Daphne, Nginx) |
+| **Vercel** | `vercel.json` (WSGI). Halai `collectstatic` depois muda CSS/JS. Baze de dadus Neon PostgreSQL. Logo/ikone rai iha baze de dadus (disk Vercel read-only). |
 
----
+Nota produsaun:
 
-## 🐳 Docker
-
-Subi ambiente produsaun kompletu (PostgreSQL, Redis, Daphne Web App, no Nginx) ho komandu simples:
-
-```bash
-docker compose up -d --build
-docker compose ps
-```
-
-Parar servisu:
-
-```bash
-docker compose down
-```
-
----
-
-## 🧪 Dezenvolvimentu & Testes
-
-Projetu ne'e kobre ho teste automatizadu rigorozu ba regra negósiu, seguransa osan, no tranzisaun estatutu:
-
-```bash
-pytest -v
-```
-
-Teste sira kobre:
-1. `test_api_endpoints.py` — Verifikasaun REST API meja, menu, no submete pedidu.
-2. `test_cashier_gate.py` — Garante pedidu labele tama koziña sem konfirmasaun kasir.
-3. `test_idempotency_and_limits.py` — Prevensaun pedidu duplikadu no limitasaun spam.
-4. `test_pricing_and_money.py` — Validasaun kalkulasaun osan, troka, no presu autoritativu.
-5. `test_state_machines.py` — Tranzisaun estatutu pedidu no sesaun meja.
-6. `test_security_hardening.py` — Device lock, tracker so ba meza rasik, validasaun `guest_count`, erro 500 la hatudu detallu internu, KPI admin, redirect login tuir papél.
-7. `test_ui_shell_and_pwa.py` — Navegasaun tuir papél, chave i18n kompletu iha lian 4, la iha CDN / emoji / class Bootstrap la válidu, manifest, service worker, logout no password staff.
-
----
-
-## 🎨 Interface (v3)
-
-- Tema naroman (fundu `#faf8f5`, superfísie mutin), kór aksentu tuir portal: Kliente `#c2410c`, Kaixa `#047857`, Dapur `#1d4ed8`, Admin `#334155`. Font ida de'it: Plus Jakarta Sans.
-- Telemóvel (< 768px): tab bar iha kraik (maksimu 5, seluk iha "Seluk"). Tablet/laptop: navegasaun horizontál iha top bar. Panel uza hash URL (ez. `/admin-portal/#menu-panel`).
-- Tabela sai kartaun iha telemóvel (`.table-stack` + `data-label`).
-- Arkivu prinsipál: `static/css/style.css`, `static/js/app.js` (panel, dialog konfirma, escape HTML), `templates/base/_nav_*.html` no `_tabbar_*.html`.
-- Depois muda CSS/JS, halai `python manage.py collectstatic --noinput` tanba Vercel servi `staticfiles/`.
+- Uza PostgreSQL, la'ós SQLite.
+- HTTPS obrigatóriu (service worker, kamera, Web Push).
+- Rai xave VAPID privadu no `SECRET_KEY` iha variável ambiente de'it.
+- Presu no totál kalkula iha servidór de'it.
 
 ---
 
@@ -249,29 +174,19 @@ Teste sira kobre:
 
 | Dokumentu | Konteúdu |
 |---|---|
-| [`prd.md`](prd.md) | *Product Requirements Document* kompletu (PRD-RESTO-PWA-001 v2.1.0) |
-| [`docker-compose.yml`](docker-compose.yml) | Konfigurasaun multi-kontentór Docker ba produsaun |
-| [`requirements/`](requirements/) | Dependénsia Python tuir ambiente (`base.txt`, `dev.txt`, `prod.txt`) |
-
----
-
-## ⚠️ Nota Production
-
-- **Baze de Dadus**: Nunka uza SQLite iha produsaun; uza sempre PostgreSQL `16+`.
-- **Daphne ASGI**: Oportunidade real-time depende ba Daphne no Redis; labele uza `python manage.py runserver` iha produsaun.
-- **Seguransa Presu**: Presu hahan nian foti 100% husi baze de dadus servidór; sistema rejeita kalkulasaun presu ne'ebé haruka husi browser kliente.
-- **HTTPS & WSS**: Ba produsaun tenke ativa sertifikadu SSL/TLS liu husi Nginx Reverse Proxy atu proteje tráfiku WebSockets no autoriza Service Worker PWA.
+| [`prd.md`](prd.md) | Product Requirements Document v3.0.0 (sistema atuál) |
+| [`.env.example`](.env.example) | Ezemplu variável ambiente |
+| [`docker-compose.yml`](docker-compose.yml) | Ambiente Docker |
+| [`requirements/`](requirements/) | Dependénsia (`base.txt`, `dev.txt`, `prod.txt`) |
 
 ---
 
 ## 📜 Lisensa
 
-Projetu ida-ne'e uza lisensa **MIT**.
+MIT.
 
 <div align="center">
 
-Harii ho ❤️ ba modernizasaun no dezenvolvimentu dijitál F&B iha Timor-Leste.
-
-**Celvass Resto & Bar** — *Pedidu Lalais. Servisu Di'ak. Esperiénsia Modernu.*
+**Celvass Resto & Bar** · *Pedidu Lalais. Servisu Di'ak. Esperiénsia Modernu.*
 
 </div>
