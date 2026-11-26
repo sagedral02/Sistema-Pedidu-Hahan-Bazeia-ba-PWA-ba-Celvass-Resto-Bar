@@ -117,7 +117,7 @@ def test_admin_portal_renders_admin_navigation_and_staff_list(admin_user, cashie
     client.force_login(admin_user)
     html = client.get('/admin-portal/').content.decode()
     assert 'data-role="admin"' in html
-    for panel in ('overview-panel', 'menu-panel', 'categories-panel', 'tables-panel', 'users-panel', 'audit-panel'):
+    for panel in ('overview-panel', 'menu-panel', 'categories-panel', 'tables-panel', 'users-panel'):
         assert f'id="{panel}"' in html
     assert '@cashier_test' in html
 

@@ -37,6 +37,47 @@
     {% endif %}
   </section>
 
+  {% if not opening.is_open %}
+    <div class="callout tone-danger mb-3" role="status" id="restaurant-closed-banner">
+      <i class="fa-solid fa-door-closed" aria-hidden="true"></i>
+      <div>
+        <div class="callout-title" data-i18n="cust_closed_title">Restorante taka agora</div>
+        <div>{% if opening.next_opening_label %}<span data-i18n="cust_closed_next">Loke fali</span> {{ opening.next_opening_label }}{% else %}<span data-i18n="cust_closed_desc">Haree menu de'it. Pedidu la bele haruka agora.</span>{% endif %}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not session %}
+    {% if recent_session %}
+      <div class="callout tone-success mb-3" id="recent-session-box">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+        <div class="flex-grow-1">
+          <div class="callout-title" data-i18n="cust_recent_title">Obrigadu! Ita-nia pedidu remata ona.</div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <a class="btn btn-sm btn-primary" href="{% url 'customer-thanks' qr_token recent_session.public_token %}"><i class="fa-solid fa-star" aria-hidden="true"></i><span data-i18n="cust_recent_rate">Fó rating</span></a>
+            <button type="button" class="btn btn-sm btn-secondary-app" onclick="customerApp.showGuestStep()"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="cust_recent_new">Hahú pedidu foun</span></button>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+    {% if opening.is_open %}
+      <form class="surface surface-pad mb-3 guest-step{% if recent_session or pending_mine %} d-none{% endif %}" id="guest-step" onsubmit="event.preventDefault(); customerApp.submitGuestCount();" novalidate>
+        <h2 class="section-title mb-1" data-i18n="cust_guests_title">Ema nain hira iha meza?</h2>
+        <p class="fs-7 text-tertiary mb-3"><span data-i18n="cust_guests_desc">Kaixa sei loke meza ba ita.</span> <span data-i18n="cust_guests_max">Maksimu</span> {{ guest_limit }}.</p>
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <div class="qty-stepper">
+            <button type="button" onclick="customerApp.adjustGuests(-1)" aria-label="-"><i class="fa-solid fa-minus"></i></button>
+            <output id="guest-count" aria-live="polite">{% if guest_limit < 2 %}1{% else %}2{% endif %}</output>
+            <button type="button" onclick="customerApp.adjustGuests(1)" aria-label="+"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <button type="submit" class="btn btn-primary flex-grow-1" id="btn-guest-submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span data-i18n="cust_guests_submit">Husu loke meza</span></button>
+        </div>
+      </form>
+    {% endif %}
+  {% endif %}
+  <button type="button" class="btn btn-sm btn-secondary-app mb-3" data-push-enable="guest" data-qr-token="{{ qr_token }}" data-session-token="{% if session and session.is_active %}{{ session.public_token }}{% endif %}" hidden>
+    <i class="fa-solid fa-bell" aria-hidden="true"></i><span data-push-label data-i18n="push_enable">Ativa notifikasaun</span>
+  </button>
   <div id="session-activation-status-banner"></div>
   <div id="customer-active-orders"></div>
 
@@ -53,47 +94,41 @@
     </div>
   </div>
 
+  {% for h in highlights %}
+    <div class="menu-highlights{% if h.slug != 'all' %} d-none{% endif %}" data-highlight-for="{{ h.slug }}">
+      {% if h.top_rated %}
+        <section class="hl-section" aria-label="Rating">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-star" aria-hidden="true"></i><span data-i18n="cust_hl_top_rated">Rating aas liu</span></h2>
+          <div class="hl-row">{% for item in h.top_rated %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+      {% if h.most_ordered %}
+        <section class="hl-section" aria-label="Popular">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i><span data-i18n="cust_hl_most_ordered">Pedidu barak liu</span></h2>
+          <div class="hl-row">{% for item in h.most_ordered %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+      {% if h.featured %}
+        <section class="hl-section" aria-label="Featured">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-thumbs-up" aria-hidden="true"></i><span data-i18n="cust_hl_featured">Rekomendasaun restorante</span></h2>
+          <div class="hl-row">{% for item in h.featured %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <h2 class="section-title mb-2 mt-1" id="menu-all-title" data-i18n="cust_hl_all_menu">Menu hotu</h2>
   <div class="menu-grid" id="menu-grid">
-    {% for cat in categories %}
-      {% for item in cat.items.all %}
+    {% for section in menu_sections %}
+      {% with cat=section.category %}
+      {% for item in section.items %}
         {% if item.availability != 'INACTIVE' %}
           <div class="menu-item-col" data-category="{{ cat.slug }}" data-name="{{ item.name|lower }}" data-desc="{{ item.description|default:''|lower }}">
-            <button type="button"
-                    class="menu-card{% if item.availability != 'AVAILABLE' %} is-unavailable{% endif %}"
-                    data-item-id="{{ item.id }}"
-                    data-item-name="{{ item.name }}"
-                    data-item-price="{{ item.price }}"
-                    data-item-image="{{ item.display_image }}"
-                    data-item-desc="{{ item.description|default:'' }}"
-                    data-available="{% if item.availability == 'AVAILABLE' %}1{% else %}0{% endif %}"
-                    {% if item.availability != 'AVAILABLE' %}aria-disabled="true"{% endif %}>
-              <span class="menu-card-media">
-                <img src="{{ item.display_image }}" alt="" loading="lazy" decoding="async" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
-                {% if item.availability != 'AVAILABLE' %}
-                  <span class="menu-card-flag tone-danger" data-i18n="sold_out">Hotu</span>
-                {% elif item.is_featured %}
-                  <span class="menu-card-flag" data-i18n="chefs_special">Rekomenda</span>
-                {% endif %}
-              </span>
-              <span class="menu-card-body">
-                <span class="menu-card-cat">{{ cat.name }}</span>
-                <span class="menu-card-title">{{ item.name }}</span>
-                {% if item.description %}<span class="menu-card-desc">{{ item.description }}</span>{% endif %}
-                <span class="menu-card-foot">
-                  <span class="price">${{ item.price }}</span>
-                  {% if item.availability == 'AVAILABLE' %}
-                    {% if session and session.is_active %}
-                      <span class="menu-card-add" aria-hidden="true"><i class="fa-solid fa-plus"></i></span>
-                    {% else %}
-                      <span class="menu-card-add is-locked" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
-                    {% endif %}
-                  {% endif %}
-                </span>
-              </span>
-            </button>
+            {% include 'customer/_menu_card.html' with cat_name=cat.name %}
           </div>
         {% endif %}
       {% endfor %}
+      {% endwith %}
     {% endfor %}
   </div>
 
@@ -102,6 +137,8 @@
     <div class="empty-state-title" data-i18n="menu_no_results">Menu la hetan</div>
     <div data-i18n="menu_no_results_desc">Koko liafuan seluk ka hili kategoria seluk.</div>
   </div>
+
+  <div class="mt-4">{% include 'customer/_contact.html' %}</div>
 {% endblock %}
 
 {% block overlays %}
@@ -198,6 +235,10 @@
     tableCode: "{{ table.table_code|escapejs }}",
     tableName: "{{ table.compact_name|escapejs }}",
     defaultImage: "{% static 'icons/default-food.png' %}",
+    guestLimit: {{ guest_limit|default:25 }},
+    pendingMine: {% if pending_mine %}true{% else %}false{% endif %},
+    isOpen: {% if opening.is_open %}true{% else %}false{% endif %},
+    sessionStatus: "{{ session.status|default:''|escapejs }}",
   });
 </script>
 {% endblock %}

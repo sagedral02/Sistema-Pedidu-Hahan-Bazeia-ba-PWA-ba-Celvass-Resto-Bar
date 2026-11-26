@@ -33,10 +33,11 @@ LOCAL_APPS = [
     'apps.ordering.apps.OrderingConfig',
     'apps.kitchen.apps.KitchenConfig',
     'apps.payments.apps.PaymentsConfig',
+    'apps.shifts.apps.ShiftsConfig',
     'apps.audit.apps.AuditConfig',
     'apps.outbox.apps.OutboxConfig',
     'apps.reporting.apps.ReportingConfig',
-    'apps.pwa.apps.PwaConfig',
+    'apps.pwa.apps.PwaConfig',  # also Web Push subscriptions (models)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -87,6 +88,18 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization & Currency
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Dili'
+# Hour at which a business day starts (0 = midnight). Daily quotas and take-away numbers reset then.
+BUSINESS_DAY_START_HOUR = int(os.environ.get('BUSINESS_DAY_START_HOUR', '0'))
+# A cashier must have an open shift (opening cash) before taking a payment.
+REQUIRE_SHIFT_FOR_PAYMENT = True
+# Where a guest lands after the thank-you page (production: https://celvass-pwa.vercel.app/).
+CUSTOMER_HOME_URL = os.environ.get('CUSTOMER_HOME_URL', '/')
+# Web Push (VAPID). Leave empty to switch push notifications off. Generate with: manage.py generate_vapid_keys
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', 'mailto:admin@celvass.tl')
+# Send pushes from a background thread so requests never wait for the push services.
+PUSH_ASYNC = os.environ.get('PUSH_ASYNC', '1') == '1'
 USE_I18N = True
 USE_TZ = True
 

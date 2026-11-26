@@ -42,7 +42,9 @@
 
   function markTriggers(id, view) {
     document.querySelectorAll('[data-panel]').forEach((el) => {
-      const sameId = el.dataset.panel === id;
+      // A menu item can cover several panels (data-panel-group="a-panel b-panel"), e.g. Katalog = menu + categories.
+      const group = el.dataset.panelGroup ? el.dataset.panelGroup.split(/\s+/) : [el.dataset.panel];
+      const sameId = group.includes(id);
       const sameView = !el.dataset.view || !view || el.dataset.view === view;
       const active = sameId && sameView;
       el.classList.toggle('is-active', active);
@@ -113,6 +115,17 @@
   function initPanels() {
     const panels = allPanels();
     if (!panels.length) return;
+
+    // Panels that moved to another page: <body data-panel-redirects="audit-panel=/reports/#audit">.
+    const redirects = (document.body.dataset.panelRedirects || '').split(/\s+/).filter(Boolean);
+    const wanted = decodeURIComponent(location.hash.slice(1)).split('/')[0];
+    for (const rule of redirects) {
+      const [from, to] = rule.split('=');
+      if (from && to && from === wanted) {
+        location.replace(to);
+        return;
+      }
+    }
     const [hashId, hashView] = decodeURIComponent(location.hash.slice(1)).split('/');
     if (hashId && showPanel(hashId, hashView, { updateHash: false, source: 'init' })) return;
     const fallback = document.body.dataset.defaultPanel || panels[0].id;
@@ -142,6 +155,8 @@
               <div class="mt-3" id="appConfirmInputWrap" hidden>
                 <label class="form-label" for="appConfirmInput" id="appConfirmInputLabel"></label>
                 <textarea class="form-control" id="appConfirmInput" rows="2"></textarea>
+                <input type="number" inputmode="numeric" step="1" class="form-control tabular" id="appConfirmNumber" hidden>
+                <div class="form-text" id="appConfirmInputHint" hidden></div>
               </div>
             </div>
             <div class="modal-footer gap-2">
@@ -157,8 +172,9 @@
   }
 
   /**
-   * confirmDialog({ title, message, confirmText, cancelText, tone: 'danger'|'primary', input: { label, required } })
-   * Resolves to false when cancelled, true (or the input text when `input` is set) when confirmed.
+   * confirmDialog({ title, message, confirmText, cancelText, tone: 'danger'|'primary',
+   *                 input: { label, required, hint, value, type: 'number', min, max } })
+   * Resolves to false when cancelled, true (or the input text / whole number when `input` is set) when confirmed.
    */
   function confirmDialog(options) {
     const opts = Object.assign({ tone: 'primary' }, options || {});
@@ -173,15 +189,45 @@
     ok.className = 'btn ' + (opts.tone === 'danger' ? 'btn-danger' : 'btn-primary');
 
     const inputWrap = el.querySelector('#appConfirmInputWrap');
-    const input = el.querySelector('#appConfirmInput');
+    const textInput = el.querySelector('#appConfirmInput');
+    const numberInput = el.querySelector('#appConfirmNumber');
+    const hint = el.querySelector('#appConfirmInputHint');
+    const numeric = Boolean(opts.input && opts.input.type === 'number');
+    const input = numeric ? numberInput : textInput;
     inputWrap.hidden = !opts.input;
-    input.value = '';
-    if (opts.input) el.querySelector('#appConfirmInputLabel').textContent = opts.input.label || '';
+    textInput.hidden = numeric;
+    numberInput.hidden = !numeric;
+    textInput.value = '';
+    numberInput.value = '';
+    hint.hidden = !(opts.input && opts.input.hint);
+    hint.textContent = (opts.input && opts.input.hint) || '';
+    if (opts.input) {
+      el.querySelector('#appConfirmInputLabel').textContent = opts.input.label || '';
+      el.querySelector('#appConfirmInputLabel').setAttribute('for', input.id);
+      if (numeric) {
+        numberInput.min = opts.input.min ?? '';
+        numberInput.max = opts.input.max ?? '';
+      }
+      if (opts.input.value !== undefined && opts.input.value !== null) input.value = String(opts.input.value);
+    }
 
     const modal = bootstrap.Modal.getOrCreateInstance(el);
     return new Promise((resolve) => {
       let result = false;
       const onOk = () => {
+        if (numeric) {
+          const n = Number(numberInput.value);
+          const min = opts.input.min ?? -Infinity;
+          const max = opts.input.max ?? Infinity;
+          if (!Number.isInteger(n) || n < min || n > max) {
+            numberInput.classList.add('is-invalid');
+            numberInput.focus();
+            return;
+          }
+          result = n;
+          modal.hide();
+          return;
+        }
         if (opts.input && opts.input.required && !input.value.trim()) {
           input.classList.add('is-invalid');
           input.focus();
@@ -193,7 +239,8 @@
       const onHidden = () => {
         ok.removeEventListener('click', onOk);
         el.removeEventListener('hidden.bs.modal', onHidden);
-        input.classList.remove('is-invalid');
+        textInput.classList.remove('is-invalid');
+        numberInput.classList.remove('is-invalid');
         resolve(result);
       };
       ok.addEventListener('click', onOk);

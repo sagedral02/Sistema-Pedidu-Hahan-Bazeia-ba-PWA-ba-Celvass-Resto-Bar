@@ -22,8 +22,20 @@ from apps.tables.services import (
     request_table_activation, approve_table_activation, reject_table_activation
 )
 from apps.tables.device import (
-    extract_device_token, is_device_authorized, claim_session_if_unclaimed, parse_guest_count,
+    extract_device_token, is_device_authorized, claim_session_if_unclaimed, parse_guest_count, guest_limit,
 )
+
+
+def restaurant_closed_error():
+    """Customers cannot open a table or order outside the opening hours (staff still can)."""
+    from apps.restaurants.services import get_restaurant, opening_status
+    st = opening_status(get_restaurant())
+    if st['is_open']:
+        return None
+    message = "Restorante taka agora."
+    if st['next_opening_label']:
+        message += f" Loke fali {st['next_opening_label']}."
+    return api_error("RESTAURANT_CLOSED", message, details=st, http_status=status.HTTP_409_CONFLICT)
 from apps.restaurants.models import Restaurant
 from apps.catalog.selectors import (
     get_categories, get_categories_with_counts, get_category_by_id,
@@ -131,6 +143,7 @@ class PublicTableResolveAPIView(APIView):
                 "table_code": table.table_code,
                 "display_name": table.display_name,
                 "capacity": table.capacity,
+                "guest_limit": guest_limit(table),
                 "status": table.status,
             },
             "session": {
@@ -163,9 +176,14 @@ class PublicTableRequestActivationAPIView(APIView):
                 "session_token": active_session.public_token,
             })
 
+        closed = restaurant_closed_error()
+        if closed:
+            return closed
+
         device_token = extract_device_token(request, request.data)
         try:
-            guest_count = parse_guest_count(request.data.get('guest_count'), default=2)
+            # The guest must say how many people sit at the table (no default): see the "How many?" step.
+            guest_count = parse_guest_count(request.data.get('guest_count'), max_value=guest_limit(table))
         except ValidationError as e:
             return api_error("INVALID_INPUT", validation_message(e))
 
@@ -186,6 +204,43 @@ class PublicTableRequestActivationAPIView(APIView):
             return api_error("ACTIVATION_ERROR", validation_message(e))
         except Exception as e:
             return server_error(e, "request-activation")
+
+
+class PublicSessionRatingsAPIView(APIView):
+    """GET / POST /public/sessions/<token>/ratings/ : rate the dishes of a paid table (owning device, 6 hours)."""
+    permission_classes = [AllowAny]
+
+    def _session(self, request, session_token):
+        from apps.catalog.ratings import device_owns, finished_session
+        session = finished_session(session_token)
+        if session is None:
+            return None, api_error("RATING_CLOSED", "Rating la loke ba sesaun ne'e.", http_status=status.HTTP_404_NOT_FOUND)
+        if not device_owns(session, extract_device_token(request)):
+            return None, device_locked_error()
+        return session, None
+
+    def get(self, request, session_token):
+        from apps.catalog.ratings import ratings_payload
+        session, error = self._session(request, session_token)
+        if error:
+            return error
+        return api_response(ratings_payload(session))
+
+    def post(self, request, session_token):
+        from apps.catalog.ratings import submit_ratings
+        session, error = self._session(request, session_token)
+        if error:
+            return error
+        entries = request.data.get('ratings') if hasattr(request.data, 'get') else None
+        if entries is None and hasattr(request.data, 'get') and request.data.get('menu_item_id'):
+            entries = [request.data]
+        try:
+            data = submit_ratings(session=session, device_token=extract_device_token(request), entries=entries or [])
+        except PermissionError:
+            return device_locked_error()
+        except ValidationError as e:
+            return api_error("RATING_INVALID", validation_message(e))
+        return api_response(data)
 
 
 class PublicMenuAPIView(APIView):
@@ -209,6 +264,10 @@ class PublicOrderSubmitAPIView(APIView):
         if not is_device_authorized(session, device_token):
             return device_locked_error()
         claim_session_if_unclaimed(session, device_token)
+
+        closed = restaurant_closed_error()
+        if closed:
+            return closed
 
         idempotency_key = request.headers.get('Idempotency-Key') or request.data.get('idempotency_key')
         if not idempotency_key:
@@ -385,8 +444,14 @@ class CashierTablesListAPIView(APIView):
     permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
 
     def get(self, request):
+        from apps.tables.progress import idle_minutes_setting
         tables = list_tables_with_status()
-        serializer = RestaurantTableSerializer(tables, many=True)
+        serializer = RestaurantTableSerializer(tables, many=True, context={'idle_minutes': idle_minutes_setting()})
+        from apps.tables.progress import raise_idle_alerts
+        try:
+            raise_idle_alerts(serializer.data)
+        except Exception as exc:  # an alert must never break the table list
+            logger.error(f"Idle alert failed: {exc}")
         return api_response(serializer.data)
 
 
@@ -395,8 +460,10 @@ class CashierOpenTableSessionAPIView(APIView):
     permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
 
     def post(self, request, table_id):
+        table = RestaurantTable.objects.filter(id=table_id).first()
         try:
-            guest_count = parse_guest_count(request.data.get('guest_count'), default=1)
+            guest_count = parse_guest_count(request.data.get('guest_count'), default=1,
+                                            max_value=guest_limit(table) if table else None)
         except ValidationError as e:
             return api_error("INVALID_INPUT", validation_message(e))
         try:
@@ -421,18 +488,30 @@ class CashierCloseTableSessionAPIView(APIView):
     permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
 
     def post(self, request, session_id):
-        reason = request.data.get('reason', 'Completed')
+        """{mode: 'normal' | 'walkout', reason}. Normal needs a settled bill (409 SESSION_UNPAID otherwise);
+        walkout needs a reason and records the unpaid balance as a loss."""
+        from apps.tables.services import close_session_by_staff
+        data = request.data if hasattr(request.data, 'get') else {}
         try:
-            session = TableSession.objects.get(id=session_id)
-            user = request.user if request.user.is_authenticated else None
-            closed_session = close_table_session(session=session, closed_by=user, reason=reason)
-            return api_response({
-                "session_id": str(closed_session.id),
-                "status": closed_session.status,
-                "closed_at": closed_session.closed_at,
-            })
+            session = TableSession.objects.select_related('table').get(id=session_id)
         except TableSession.DoesNotExist:
             return api_error("RESOURCE_NOT_FOUND", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            closed = close_session_by_staff(session=session, closed_by=request.user,
+                                            mode=str(data.get('mode') or 'normal'),
+                                            reason=str(data.get('reason') or ''))
+        except ValidationError as e:
+            code = getattr(e, 'code', None) or 'INVALID_INPUT'
+            http = status.HTTP_409_CONFLICT if code == 'SESSION_UNPAID' else status.HTTP_400_BAD_REQUEST
+            return api_error(code if code in ('SESSION_UNPAID', 'WALKOUT_REASON_REQUIRED') else 'INVALID_INPUT',
+                             validation_message(e), http_status=http)
+        return api_response({
+            "session_id": str(closed.id),
+            "status": closed.status,
+            "closed_at": closed.closed_at,
+            "close_kind": closed.close_kind,
+            "unpaid_amount": str(closed.unpaid_amount),
+        })
 
 
 class CashierActivationRequestsAPIView(APIView):
@@ -454,8 +533,13 @@ class CashierApproveActivationAPIView(APIView):
 
     def post(self, request, request_id):
         user = request.user if request.user.is_authenticated else None
+        raw_guests = request.data.get('guest_count') if hasattr(request.data, 'get') else None
         try:
-            session = approve_table_activation(request_id=str(request_id), approved_by=user)
+            guests = parse_guest_count(raw_guests, default=0) or None
+        except ValidationError as e:
+            return api_error("INVALID_INPUT", validation_message(e))
+        try:
+            session = approve_table_activation(request_id=str(request_id), approved_by=user, guest_count=guests)
             return api_response({
                 "session_id": str(session.id),
                 "public_token": session.public_token,
@@ -509,7 +593,7 @@ class CashierPaymentAPIView(APIView):
                 "tendered_amount": str(last_payment.tendered_amount),
                 "change_amount": str(last_payment.change_amount),
                 "paid_at": last_payment.paid_at,
-                "table_name": session.table.display_name,
+                "table_name": session.label,
                 "table_code": session.table.table_code,
                 "items": bill.get("items", []),
                 "subtotal": str(bill.get("subtotal", last_payment.amount)),
@@ -542,7 +626,7 @@ class CashierPaymentAPIView(APIView):
                 "change_amount": str(payment.change_amount),
                 "status": payment.status,
                 "paid_at": payment.paid_at,
-                "table_name": session.table.display_name,
+                "table_name": session.label,
                 "table_code": session.table.table_code,
                 "items": bill.get("items", []),
                 "subtotal": str(bill.get("subtotal", payment.amount)),
@@ -551,6 +635,143 @@ class CashierPaymentAPIView(APIView):
             return api_error("RESOURCE_NOT_FOUND", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
         except ValidationError as e:
             return api_error("PAYMENT_ERROR", validation_message(e))
+
+
+class CashierRequestBillAPIView(APIView):
+    """POST /cashier/table-sessions/<id>/request-bill/ : ask for the bill on behalf of the table.
+
+    Without `force` the call is refused with the list of unserved items when something is still being
+    prepared, so the cashier can confirm before the bill is raised anyway (`{"force": true}`).
+    """
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def post(self, request, session_id):
+        from apps.payments.billing import UnservedItemsError, active_bill
+        try:
+            session = TableSession.objects.get(id=session_id)
+        except TableSession.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Sesi meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        force = str(request.data.get('force', '')).lower() in ('1', 'true', 'yes') if hasattr(request.data, 'get') else False
+        try:
+            session = request_bill_for_session(session=session, requested_by=request.user, force=force)
+        except UnservedItemsError as e:
+            return api_error("BILL_UNSERVED_ITEMS", validation_message(e), details={'items': e.items})
+        except ValidationError as e:
+            return api_error("BILL_REQUEST_INVALID", validation_message(e))
+        bill = active_bill(session)
+        return api_response({
+            "status": session.status,
+            "bill_id": str(bill.id) if bill else None,
+            "forced": bool(bill and bill.forced),
+            "bill": calculate_session_bill(session),
+        })
+
+
+class CashierMenuAPIView(APIView):
+    """GET /cashier/menu/ : active dishes grouped by category with today's stock (for the order screen)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def get(self, request):
+        return api_response(CategorySerializer(get_categories(active_only=True), many=True).data)
+
+
+class CashierCreateOrderAPIView(APIView):
+    """POST /cashier/orders/create/ : the cashier orders for a take away or a table; it goes straight to the kitchen.
+
+    Requires an Idempotency-Key. For a take away a new take-away session is opened; for a table without an
+    active session one is opened with `guest_count`. A repeat with the same key returns the first order.
+    """
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def post(self, request):
+        from django.db import transaction
+        from apps.ordering.models import OrderSource
+        from apps.tables.selectors import get_active_session_for_table
+        from apps.tables.takeaway import create_takeaway_session
+        from .serializers import CashierOrderCreateSerializer
+
+        key = (request.headers.get('Idempotency-Key') or request.data.get('idempotency_key') or '').strip()
+        if not key:
+            return api_error("IDEMPOTENCY_KEY_REQUIRED", "Header 'Idempotency-Key' obrigatóriu.")
+        serializer = CashierOrderCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_error("INVALID_INPUT", "Formatu pedidu la válidu.", details=serializer.errors)
+        data = serializer.validated_data
+
+        existing = Order.objects.filter(idempotency_key=f"pos:{key}", source=OrderSource.CASHIER).first()
+        if existing:
+            return api_response(OrderSerializer(existing).data, http_status=status.HTTP_200_OK)
+
+        try:
+            with transaction.atomic():
+                if data['destination'] == 'TAKEAWAY':
+                    restaurant = Restaurant.objects.first()
+                    session = create_takeaway_session(
+                        restaurant=restaurant, opened_by=request.user, customer_name=data.get('customer_name', ''))
+                else:
+                    table = RestaurantTable.objects.filter(id=data['table_id'], is_active=True, is_takeaway=False).first()
+                    if table is None:
+                        return api_error("RESOURCE_NOT_FOUND", "Meza la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+                    # The cashier opens the table first ("Loke sesaun"); orders never open a session.
+                    session = get_active_session_for_table(table)
+                    if session is None or session.status not in (SessionStatus.OPEN, SessionStatus.BILL_REQUESTED):
+                        return api_error("TABLE_SESSION_NOT_OPEN",
+                                         f"{table.display_name}: loke sesaun uluk molok halo pedidu.",
+                                         http_status=status.HTTP_409_CONFLICT)
+                order = submit_customer_order(
+                    table_session=session, items_data=data['items'], idempotency_key=f"pos:{key}",
+                    customer_note=data.get('customer_note', ''), source=OrderSource.CASHIER,
+                    created_by=request.user,
+                )
+        except ValidationError as e:
+            return api_error("ORDER_VALIDATION_ERROR", validation_message(e))
+        return api_response(OrderSerializer(order).data, http_status=status.HTTP_201_CREATED)
+
+
+class CashierTakeawayListAPIView(APIView):
+    """GET /cashier/takeaway/ : take-away orders still in progress (not closed), newest number last."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def get(self, request):
+        from apps.tables.selectors import ACTIVE_SESSION_STATUSES
+        orders = (Order.objects.filter(table_session__table__is_takeaway=True,
+                                       table_session__status__in=ACTIVE_SESSION_STATUSES)
+                  .exclude(status__in=[OrderStatus.REJECTED])
+                  .select_related('table_session__table').prefetch_related('items')
+                  .order_by('table_session__takeaway_date', 'table_session__takeaway_number', 'created_at'))
+        rows = []
+        for o in orders:
+            data = OrderSerializer(o).data
+            live = [i for i in o.items.all() if i.status != 'UNAVAILABLE']
+            data['ready_for_pickup'] = bool(live) and all(i.status in ('READY', 'SERVED') for i in live) \
+                and any(i.status == 'READY' for i in live)
+            data['bill'] = {k: str(v) for k, v in calculate_session_bill(o.table_session).items()
+                            if k in ('grand_total', 'remaining_balance', 'total_paid')}
+            rows.append(data)
+        return api_response(rows)
+
+
+class CashierHandOverAPIView(APIView):
+    """POST /cashier/table-sessions/<id>/hand-over/ : give the ready take-away items to the customer."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def post(self, request, session_id):
+        from apps.kitchen.services import hand_over_takeaway
+        try:
+            session = TableSession.objects.select_related('table').get(id=session_id)
+        except TableSession.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Sesi la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            count = hand_over_takeaway(session=session, staff_user=request.user)
+        except ValidationError as e:
+            return api_error("HANDOVER_INVALID", validation_message(e))
+        session.refresh_from_db()
+        return api_response({'handed_over': count, 'session_status': session.status})
 
 
 # ==========================================
@@ -615,6 +836,135 @@ class KitchenServedOrderAPIView(APIView):
             return api_error("ORDER_INVALID_STATE", validation_message(e))
 
 
+_KITCHEN_ITEM_ACTIONS = {'start': 'COOKING', 'ready': 'READY', 'served': 'SERVED'}
+
+
+def _item_ids_from_request(request):
+    """Optional `item_ids` list in the body; None means "every eligible line"."""
+    data = request.data if hasattr(request, 'data') else {}
+    raw = data.get('item_ids') if hasattr(data, 'get') else None
+    if raw is None:
+        return None
+    if not isinstance(raw, (list, tuple)):
+        raise ValidationError("item_ids must be a list.")
+    ids = []
+    for value in raw:
+        try:
+            ids.append(uuid.UUID(str(value)))
+        except (ValueError, AttributeError):
+            raise ValidationError("item_ids contains an invalid id.")
+    return ids
+
+
+class KitchenItemActionAPIView(APIView):
+    """POST /kitchen/items/<item_id>/<action>/ : move one order line (start, ready, served)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsKitchenRole | IsAdminRole]
+    action = None
+
+    def post(self, request, item_id):
+        from apps.ordering.models import OrderItem
+        from apps.kitchen.services import change_items_status
+        try:
+            item = OrderItem.objects.select_related('order').get(id=item_id)
+            user = request.user if request.user.is_authenticated else None
+            order = change_items_status(
+                order=item.order, to_status=_KITCHEN_ITEM_ACTIONS[self.action],
+                item_ids=[item.id], staff_user=user)
+            return api_response(OrderSerializer(order).data)
+        except OrderItem.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Item la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
+
+
+class KitchenOrderItemsActionAPIView(APIView):
+    """POST /kitchen/orders/<order_id>/items/<action>/ : bulk move (all eligible lines or `item_ids`)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsKitchenRole | IsAdminRole]
+    action = None
+
+    def post(self, request, order_id):
+        from apps.kitchen.services import change_items_status
+        try:
+            order = Order.objects.get(id=order_id)
+            user = request.user if request.user.is_authenticated else None
+            order = change_items_status(
+                order=order, to_status=_KITCHEN_ITEM_ACTIONS[self.action],
+                item_ids=_item_ids_from_request(request), staff_user=user)
+            return api_response(OrderSerializer(order).data)
+        except Order.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Pedidu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
+
+
+class KitchenItemUnavailableAPIView(APIView):
+    """POST /kitchen/items/<item_id>/unavailable/ : the kitchen ran out of this dish ("Bahan habis")."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsKitchenRole | IsAdminRole]
+
+    def post(self, request, item_id):
+        from apps.ordering.models import OrderItem
+        from apps.kitchen.notices import report_out_of_stock
+        try:
+            item = OrderItem.objects.select_related('order').get(id=item_id)
+            reason = str(request.data.get('reason', '') if hasattr(request.data, 'get') else '')
+            order, notice = report_out_of_stock(item=item, staff_user=request.user, reason=reason)
+            data = OrderSerializer(order).data
+            return api_response({'order': data, 'notice': _notice_dict(notice) if notice else None})
+        except OrderItem.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Item la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return api_error("ORDER_INVALID_STATE", validation_message(e))
+
+
+def _notice_dict(n):
+    return {
+        'id': str(n.id), 'kind': n.kind, 'status': n.status,
+        'menu_item_id': str(n.menu_item_id) if n.menu_item_id else None,
+        'menu_name': n.menu_name_snapshot, 'order_code': n.order_code, 'table_label': n.table_label,
+        'message': n.message, 'created_at': n.created_at.isoformat(),
+        'acknowledged_at': n.acknowledged_at.isoformat() if n.acknowledged_at else None,
+    }
+
+
+class CashierKitchenNoticesAPIView(APIView):
+    """GET /cashier/kitchen-notices/ : notices still waiting for a decision (oldest first)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def get(self, request):
+        from apps.kitchen.notices import list_active_notices
+        return api_response([_notice_dict(n) for n in list_active_notices()])
+
+
+class CashierKitchenNoticeActionAPIView(APIView):
+    """POST /cashier/kitchen-notices/<id>/<action>/ with action acknowledge, resolve or sold-out."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+    action = None
+
+    def post(self, request, notice_id):
+        from apps.kitchen.models import KitchenNotice
+        from apps.kitchen import notices
+        try:
+            notice = KitchenNotice.objects.get(id=notice_id)
+            if self.action == 'acknowledge':
+                notice = notices.acknowledge_notice(notice=notice, staff_user=request.user)
+                return api_response(_notice_dict(notice))
+            if self.action == 'resolve':
+                notice = notices.resolve_notice(notice=notice, staff_user=request.user)
+                return api_response(_notice_dict(notice))
+            result = notices.mark_sold_out_from_notice(notice=notice, staff_user=request.user)
+            notice.refresh_from_db()
+            return api_response({'notice': _notice_dict(notice), **result})
+        except KitchenNotice.DoesNotExist:
+            return api_error("RESOURCE_NOT_FOUND", "Info la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return api_error("VALIDATION_ERROR", validation_message(e))
+
+
 # ==========================================
 # ADMIN API
 # ==========================================
@@ -676,7 +1026,7 @@ class AdminTableDetailAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def _get(self, table_id):
-        return RestaurantTable.objects.filter(id=table_id).first()
+        return RestaurantTable.objects.filter(id=table_id, is_takeaway=False).first()
 
     def get(self, request, table_id):
         table = self._get(table_id)
@@ -855,8 +1205,9 @@ class AdminMenuItemListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request):
-        items = get_all_menu_items()
-        serializer = AdminMenuItemSerializer(items, many=True)
+        from apps.catalog.availability import availability_map
+        items = list(get_all_menu_items())
+        serializer = AdminMenuItemSerializer(items, many=True, context={'availability': availability_map(items)})
         return api_response(serializer.data)
 
     def post(self, request):
@@ -887,6 +1238,7 @@ class AdminMenuItemListCreateAPIView(APIView):
                 is_featured=serializer.validated_data.get('is_featured', False),
                 sort_order=serializer.validated_data.get('sort_order', 0),
                 preparation_note=serializer.validated_data.get('preparation_note', ''),
+                daily_quota=serializer.validated_data.get('daily_quota'),
                 actor_user=request.user
             )
             return api_response(AdminMenuItemSerializer(item).data, http_status=status.HTTP_201_CREATED)
@@ -895,6 +1247,82 @@ class AdminMenuItemListCreateAPIView(APIView):
             return api_error("MENU_ERROR", msg)
         except Exception as e:
             return server_error(e, request.path)
+
+
+class AdminMenuItemCloseTodayAPIView(APIView):
+    """POST /admin/menu-items/<id>/close-today/ : close the dish for the business day (reason optional)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def post(self, request, item_id):
+        from apps.catalog.daily import close_menu_for_today
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            reason = str(request.data.get('reason', '') if hasattr(request.data, 'get') else '')
+            result = close_menu_for_today(menu_item=item, staff_user=request.user, reason=reason)
+        except ValidationError as e:
+            return api_error("MENU_ERROR", validation_message(e))
+        item.refresh_from_db()
+        return api_response({'item': AdminMenuItemSerializer(item).data, **result})
+
+
+class AdminMenuItemReopenAPIView(APIView):
+    """POST /admin/menu-items/<id>/reopen/ : undo today's closing."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def post(self, request, item_id):
+        from apps.catalog.daily import reopen_menu
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        was_closed = reopen_menu(menu_item=item, staff_user=request.user)
+        return api_response({'item': AdminMenuItemSerializer(item).data, 'was_closed': was_closed})
+
+
+class AdminMenuItemQuotaAPIView(APIView):
+    """PATCH /admin/menu-items/<id>/quota/ : set the daily quota inline ({"daily_quota": 20} or null/"" = no limit)."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def patch(self, request, item_id):
+        from apps.catalog.availability import menu_availability
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        if not hasattr(request.data, 'get') or 'daily_quota' not in request.data:
+            return api_error("VALIDATION_ERROR", "daily_quota obrigatóriu.")
+        try:
+            updated = update_menu_item(item=item, daily_quota=request.data.get('daily_quota'), actor_user=request.user)
+        except ValidationError as e:
+            return api_error("MENU_ERROR", validation_message(e))
+        return api_response({'item': AdminMenuItemSerializer(updated).data,
+                             'availability': menu_availability(updated).as_dict()})
+
+    put = patch
+
+
+class AdminMenuItemReviewsAPIView(APIView):
+    """GET /admin/menu-items/<id>/reviews/ : rating summary and the latest customer reviews of a dish."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get(self, request, item_id):
+        from apps.catalog.ratings import recent_reviews
+        item = get_menu_item_by_id(item_id)
+        if not item:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        try:
+            limit = max(1, min(int(request.query_params.get('limit', 5)), 20))
+        except (TypeError, ValueError):
+            limit = 5
+        return api_response({
+            'rating_avg': float(item.rating_avg or 0),
+            'rating_count': int(item.rating_count or 0),
+            'reviews': recent_reviews(item, limit=limit),
+        })
 
 
 class AdminMenuItemDetailAPIView(APIView):
@@ -943,6 +1371,7 @@ class AdminMenuItemDetailAPIView(APIView):
                 is_featured=serializer.validated_data.get('is_featured'),
                 sort_order=serializer.validated_data.get('sort_order'),
                 preparation_note=serializer.validated_data.get('preparation_note'),
+                **({'daily_quota': serializer.validated_data.get('daily_quota')} if 'daily_quota' in serializer.validated_data else {}),
                 actor_user=request.user
             )
             return api_response(AdminMenuItemSerializer(updated).data)
@@ -1053,32 +1482,134 @@ class CashierBillsHistoryAPIView(APIView):
         return api_response(data)
 
 
-class CashierShiftSummaryAPIView(APIView):
+class CashierShiftAPIView(APIView):
+    """GET /cashier/shift/ : my open shift with live figures (null when none).
+    POST /cashier/shift/open/ {opening_cash} and POST /cashier/shift/close/ {counted_cash, note}."""
     authentication_classes = [SessionAuthentication, BasicAuthentication]
-    permission_classes = [IsAuthenticated, IsCashierOrAdmin]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+    action = 'get'
 
     def get(self, request):
-        from django.db import models
-        today = timezone.localdate()
-        from apps.payments.models import Payment, PaymentMethod, PaymentStatus
-        payments_today = Payment.objects.filter(paid_at__date=today, status=PaymentStatus.COMPLETED)
+        from apps.shifts.models import Shift
+        from apps.shifts.services import current_shift, shift_dict
+        last = Shift.objects.filter(cashier=request.user, status='CLOSED').order_by('-closed_at').first()
+        return api_response({'current': shift_dict(current_shift(request.user)), 'last_closed': shift_dict(last)})
 
-        cash_total = payments_today.filter(method=PaymentMethod.CASH).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
-        other_total = payments_today.exclude(method=PaymentMethod.CASH).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
-        grand_total = cash_total + other_total
+    def post(self, request):
+        from apps.shifts import services as shifts
+        data = request.data if hasattr(request.data, 'get') else {}
+        try:
+            if self.action == 'open':
+                shift = shifts.open_shift(cashier=request.user, opening_cash=data.get('opening_cash'))
+            else:
+                shift = shifts.current_shift(request.user)
+                if shift is None:
+                    return api_error("SHIFT_NOT_OPEN", "Seidauk loke turnu.", http_status=status.HTTP_404_NOT_FOUND)
+                shift = shifts.close_shift(shift=shift, counted_cash=data.get('counted_cash'),
+                                           note=str(data.get('note', '')), actor=request.user)
+        except ValidationError as e:
+            return api_error("SHIFT_ERROR", validation_message(e))
+        return api_response(shifts.shift_dict(shift))
 
-        completed_orders_count = Order.objects.filter(created_at__date=today, status=OrderStatus.COMPLETED).count()
-        paid_sessions_count = TableSession.objects.filter(paid_at__date=today).count()
 
-        return api_response({
-            'cash_total': str(cash_total.quantize(Decimal('0.01'))),
-            'other_total': str(other_total.quantize(Decimal('0.01'))),
-            'grand_total': str(grand_total.quantize(Decimal('0.01'))),
-            'payments_count': payments_today.count(),
-            'paid_sessions_count': paid_sessions_count,
-            'completed_orders_count': completed_orders_count,
-            'timestamp': timezone.now().strftime("%d/%m/%Y %H:%M"),
-        })
+class CashierMenuStockAPIView(APIView):
+    """GET /cashier/menu-stock/ : every orderable-or-closed dish with today's quota, sold and remaining."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def get(self, request):
+        from apps.catalog.availability import availability_map
+        items = [i for i in get_all_menu_items() if i.availability != ItemAvailability.INACTIVE and i.category.is_active]
+        states = availability_map(items)
+        rows = []
+        for item in items:
+            a = states[str(item.id)]
+            rows.append({
+                'id': str(item.id), 'name': item.name, 'category_id': str(item.category_id),
+                'category_name': item.category.name, 'price': str(item.price), 'image': item.display_image,
+                'state': a.state, 'orderable': a.orderable, 'quota': a.quota, 'sold': a.sold,
+                'remaining': a.remaining, 'closed_reason': a.closed_reason,
+            })
+        return api_response(rows)
+
+
+class CashierMenuSoldOutAPIView(APIView):
+    """POST /cashier/menu-items/<id>/sold-out/ {closed: true|false, reason}: close for today or reopen.
+    Cashiers cannot change anything else about a dish."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsCashierRole | IsAdminRole]
+
+    def post(self, request, item_id):
+        from apps.catalog.daily import close_menu_for_today, reopen_menu
+        item = get_menu_item_by_id(item_id)
+        if not item or item.availability == ItemAvailability.INACTIVE:
+            return api_error("RESOURCE_NOT_FOUND", "Menu la hetan.", http_status=status.HTTP_404_NOT_FOUND)
+        data = request.data if hasattr(request.data, 'get') else {}
+        closed = str(data.get('closed', 'true')).lower() not in ('0', 'false', 'no')
+        try:
+            if closed:
+                result = close_menu_for_today(menu_item=item, staff_user=request.user, reason=str(data.get('reason', '')))
+            else:
+                result = {'was_closed': reopen_menu(menu_item=item, staff_user=request.user)}
+        except ValidationError as e:
+            return api_error("MENU_ERROR", validation_message(e))
+        return api_response({'id': str(item.id), 'closed': closed, **result})
+
+
+class AdminRestaurantSettingsAPIView(APIView):
+    """GET / PATCH /admin/restaurant/ : identity, contact, location, opening hours, tax and receipt note."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    @staticmethod
+    def _body(restaurant):
+        from apps.restaurants.branding import brand_context
+        from apps.restaurants.services import hours_list, opening_status, settings_dict
+        data = settings_dict(restaurant)
+        data['opening_hours'] = hours_list(restaurant)
+        data['opening_status'] = opening_status(restaurant)
+        data['brand'] = brand_context(restaurant)
+        return data
+
+    def get(self, request):
+        from apps.restaurants.services import get_restaurant
+        return api_response(self._body(get_restaurant()))
+
+    def patch(self, request):
+        from apps.restaurants.services import get_restaurant, update_restaurant_settings
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            restaurant = update_restaurant_settings(restaurant=get_restaurant(), data=data, actor_user=request.user)
+        except ValidationError as e:
+            return api_error("SETTINGS_INVALID", validation_message(e))
+        return api_response(self._body(restaurant))
+
+    def put(self, request):
+        return self.patch(request)
+
+
+class AdminRestaurantLogoAPIView(APIView):
+    """POST (multipart `logo`) sets the logo, which also becomes the app icon; DELETE goes back to the default."""
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def post(self, request):
+        from apps.restaurants.branding import set_logo
+        from apps.restaurants.services import get_restaurant
+        upload = request.FILES.get('logo')
+        if upload is None:
+            return api_error("SETTINGS_INVALID", "Choose an image file.")
+        try:
+            restaurant = set_logo(restaurant=get_restaurant(), upload=upload, actor_user=request.user)
+        except ValidationError as e:
+            return api_error("SETTINGS_INVALID", validation_message(e))
+        return api_response(AdminRestaurantSettingsAPIView._body(restaurant))
+
+    def delete(self, request):
+        from apps.restaurants.branding import clear_logo
+        from apps.restaurants.services import get_restaurant
+        restaurant = clear_logo(restaurant=get_restaurant(), actor_user=request.user)
+        return api_response(AdminRestaurantSettingsAPIView._body(restaurant))
 
 
 class AdminOverviewAPIView(APIView):

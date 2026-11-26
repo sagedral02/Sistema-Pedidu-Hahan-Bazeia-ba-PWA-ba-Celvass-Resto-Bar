@@ -34,9 +34,10 @@
     return `
       <div class="receipt-paper" id="printable-receipt">
         <div style="text-align:center">
+          ${r.logo ? `<img src="${esc(r.logo)}" alt="" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 4px">` : ''}
           <strong style="font-size:14px">${esc((r.name || 'Celvass Resto & Bar').toUpperCase())}</strong><br>
           ${r.address ? `<small>${esc(r.address)}</small><br>` : ''}
-          ${r.phone ? `<small>Tel: ${esc(r.phone)}</small>` : ''}
+          ${r.phone ? `<small>Tel: ${esc(r.phone)}</small>` : ''}${r.whatsapp ? `<small> &middot; WA: ${esc(r.whatsapp)}</small>` : ''}
         </div>
         <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;margin:8px 0;padding:4px 0">
           <div>${esc(tr('th_table'))}: ${esc(payment.table_name || payment.table_code || '-')}</div>
@@ -52,6 +53,7 @@
           <div style="display:flex;justify-content:space-between"><span>${esc(tr('tendered_short'))}</span><span>${money(payment.tendered_amount)}</span></div>
           <div style="display:flex;justify-content:space-between;font-weight:bold"><span>${esc(tr('change_label'))}</span><span>${money(payment.change_amount)}</span></div>
         </div>
+        ${r.note ? `<div style="text-align:center;margin-top:8px"><small>${esc(r.note)}</small></div>` : ''}
         <div style="text-align:center;margin-top:10px"><small>${esc(tr('receipt_thanks'))}</small></div>
       </div>`;
   }

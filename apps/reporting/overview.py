@@ -21,7 +21,8 @@ from apps.ordering.models import Order, OrderItem, OrderStatus
 from apps.payments.models import Payment, PaymentMethod, PaymentStatus
 from apps.tables.models import RestaurantTable, TableStatus
 
-from .reports import SOLD_STATUSES, ZERO, Period, ReportError, _money
+from .reports import (SOLD_STATUSES, ZERO, Period, ReportError, _money, dine_in_sessions, takeaway_orders,
+                      walkout_sessions)
 
 RANGE_DAYS = {'today': 1, '7d': 7, '30d': 30}
 TOP_ITEMS = 8
@@ -79,6 +80,47 @@ def _period_totals(period: Period) -> Dict[str, Any]:
         'orders': orders['n'], 'rejected': orders['rejected'],
         'rejection_rate': round(orders['rejected'] * 100 / orders['n'], 1) if orders['n'] else None,
     }
+
+
+def _visitor_totals(period: Period) -> Dict[str, Any]:
+    agg = dine_in_sessions(period).aggregate(n=Count('id'), guests=Sum('guest_count'))
+    return {'guests': int(agg['guests'] or 0), 'sessions': agg['n'], 'takeaway': takeaway_orders(period).count()}
+
+
+def _visitors(current: Period, previous: Period) -> Dict[str, Any]:
+    """Guests (dine-in only, same rules as the Visitors report) with the previous period and a daily/hourly series."""
+    cur, prev = _visitor_totals(current), _visitor_totals(previous)
+    if current.start == current.end:
+        rows = dine_in_sessions(current).annotate(hour=ExtractHour('opened_at')).values('hour') \
+            .annotate(g=Sum('guest_count'))
+        by_hour = {r['hour']: int(r['g'] or 0) for r in rows}
+        series = {'granularity': 'hour', 'labels': list(range(24)), 'values': [by_hour.get(h, 0) for h in range(24)]}
+    else:
+        days = (current.end - current.start).days + 1
+        rows = dine_in_sessions(current).annotate(day=TruncDate('opened_at')).values('day') \
+            .annotate(g=Sum('guest_count'))
+        by_day = {r['day']: int(r['g'] or 0) for r in rows}
+        all_days = [current.start + timedelta(days=i) for i in range(days)]
+        series = {'granularity': 'day', 'labels': [d.isoformat() for d in all_days],
+                  'values': [by_day.get(d, 0) for d in all_days]}
+    avg = round(cur['guests'] / cur['sessions'], 1) if cur['sessions'] else None
+    return {
+        'value': cur['guests'], 'previous': prev['guests'], 'delta_pct': _pct_change(cur['guests'], prev['guests']),
+        'sessions': cur['sessions'], 'average_per_session': avg, 'takeaway_orders': cur['takeaway'],
+        'series': series,
+    }
+
+
+def _unpaid_totals(period: Period) -> Dict[str, Any]:
+    agg = walkout_sessions(period).aggregate(total=Sum('unpaid_amount'), n=Count('id'))
+    return {'total': agg['total'] or ZERO, 'count': agg['n']}
+
+
+def _unpaid(current: Period, previous: Period) -> Dict[str, Any]:
+    """Loss from tables closed as 'left without paying' (same rule as the exceptions report)."""
+    cur, prev = _unpaid_totals(current), _unpaid_totals(previous)
+    return {'value': _num(cur['total']), 'previous': _num(prev['total']), 'count': cur['count'],
+            'delta_pct': _pct_change(cur['total'], prev['total'])}
 
 
 def _status_filter(*statuses):
@@ -146,18 +188,23 @@ def _busy_hours(period: Period) -> List[int]:
     return [by_hour.get(h, 0) for h in range(24)]
 
 
-def _methods(period: Period) -> List[Dict[str, Any]]:
-    rows = {r['method']: r for r in _payments(period).values('method').annotate(n=Count('id'), total=Sum('amount'))}
-    return [
-        {'method': m, 'count': rows[m]['n'] if m in rows else 0, 'total': _num(rows[m]['total']) if m in rows else 0.0}
-        for m in PaymentMethod.values
-    ]
+def _order_types(period: Period) -> List[Dict[str, Any]]:
+    rows = {
+        r['table_session__table__is_takeaway']: r
+        for r in _payments(period).values('table_session__table__is_takeaway').annotate(n=Count('id'), total=Sum('amount'))
+    }
+    out = []
+    for kind in ('DINE_IN', 'TAKEAWAY'):
+        r = rows.get(kind == 'TAKEAWAY')
+        out.append({'order_type': kind, 'count': r['n'] if r else 0, 'total': _num(r['total']) if r else 0.0})
+    return out
 
 
 def _sold_items(period: Period):
     start_dt, end_dt = period.bounds()
     return OrderItem.objects.filter(
-        order__status__in=SOLD_STATUSES, order__created_at__gte=start_dt, order__created_at__lt=end_dt)
+        order__status__in=SOLD_STATUSES, order__created_at__gte=start_dt, order__created_at__lt=end_dt,
+    ).exclude(status='UNAVAILABLE')
 
 
 def _top_items(period: Period) -> Dict[str, List[Dict[str, Any]]]:
@@ -247,11 +294,12 @@ def build_overview(range_key: Optional[str] = 'today', today: Optional[date] = N
             'start': current.start.isoformat(), 'end': current.end.isoformat(),
             'previous_start': previous.start.isoformat(), 'previous_end': previous.end.isoformat(),
         },
-        'kpi': _kpi(_period_totals(current), _period_totals(previous)),
+        'kpi': {**_kpi(_period_totals(current), _period_totals(previous)), 'visitors': _visitors(current, previous),
+                'unpaid': _unpaid(current, previous)},
         'tables': {'occupied': tables['occupied'], 'total': tables['total']},
         'trend': _trend(current, previous),
         'busy_hours': _busy_hours(current),
-        'methods': _methods(current),
+        'order_types': _order_types(current),
         'top_items': _top_items(current),
         'categories': _categories(current),
         'statuses': _statuses(current),

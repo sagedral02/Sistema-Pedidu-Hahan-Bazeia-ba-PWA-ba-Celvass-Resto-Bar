@@ -270,9 +270,19 @@ LABELS = {
 }
 
 
+from .labels_audit import AUDIT_LABELS  # noqa: E402
 from .labels_history import HISTORY_LABELS  # noqa: E402
 
 for _lang, _extra in HISTORY_LABELS.items():
+    LABELS[_lang].update(_extra)
+for _lang, _extra in AUDIT_LABELS.items():
+    LABELS[_lang].update(_extra)
+
+# Labels added with the per-item / take-away / shift work (one JSON shared with static/js/i18n.js).
+import json as _json  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+for _lang, _extra in _json.loads((_Path(__file__).with_name('labels_feature.json')).read_text(encoding='utf-8')).items():
     LABELS[_lang].update(_extra)
 
 

@@ -6,8 +6,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from apps.tables.models import TableSession, SessionStatus, RestaurantTable, TableStatus
-from apps.ordering.models import Order, OrderStatus
-from .models import Payment, PaymentMethod, PaymentStatus
+from apps.ordering.models import ItemStatus, Order, OrderItem, OrderStatus
+from .models import Bill, BillStatus, Payment, PaymentMethod, PaymentStatus
 from apps.audit.services import log_audit_event
 from apps.outbox.services import create_outbox_event
 
@@ -44,6 +44,8 @@ def calculate_session_bill(session: TableSession) -> Dict[str, Any]:
     all_items = []
     for order in orders:
         for item in order.items.all():
+            if item.status == ItemStatus.UNAVAILABLE:
+                continue  # out-of-stock lines are not billed and not printed on the receipt
             all_items.append({
                 'name': item.menu_name_snapshot,
                 'quantity': item.quantity,
@@ -88,12 +90,25 @@ def record_cash_payment(
     request_id: str = ""
 ) -> Payment:
     """
-    Records payment, computes exact change, marks session PAID and orders COMPLETED.
-    Prevents duplicate payments when session balance is already $0.00.
+    Takes a cash payment against the session's REQUESTED bill and computes the change.
+
+    The session becomes PAID. It is closed (table freed, orders COMPLETED) only when nothing is left to
+    serve; otherwise it closes by itself when the last item is served (billing.settle_paid_session).
+    Only cash is accepted (PaymentMethod.MANUAL_OTHER stays in the enum so old rows remain readable).
     """
+    from .billing import active_bill, settle_paid_session, snapshot_bill
+
+    if method != PaymentMethod.CASH:
+        raise ValidationError("Only cash payments are accepted.")
+    from django.conf import settings as dj_settings
+    from apps.shifts.services import current_shift
+    shift = current_shift(cashier_user)
+    if shift is None and getattr(dj_settings, 'REQUIRE_SHIFT_FOR_PAYMENT', True):
+        if not (idempotency_key and Payment.objects.filter(table_session=session, idempotency_key=idempotency_key).exists()):
+            raise ValidationError("Open your shift (opening cash) before taking payments.")
     with transaction.atomic():
         locked_session = TableSession.objects.select_for_update().get(id=session.id)
-        
+
         # Idempotency check
         if idempotency_key:
             existing_payment = Payment.objects.filter(
@@ -108,7 +123,7 @@ def record_cash_payment(
 
         bill = calculate_session_bill(locked_session)
         remaining_balance = bill['remaining_balance']
-        
+
         if bill['grand_total'] <= Decimal('0.00'):
             raise ValidationError("No billable orders found for this table session.")
 
@@ -122,19 +137,26 @@ def record_cash_payment(
                 return existing_payment
             raise ValidationError("Konta meza ne'e selu hotu ona (All billable orders are already paid).")
 
+        # Payment only happens through a bill.
+        if locked_session.status != SessionStatus.BILL_REQUESTED:
+            raise ValidationError("Request the bill first (Minta tagihan) before taking payment.")
+        bill_obj = active_bill(locked_session)
+        if bill_obj is None:
+            # Sessions that asked for the bill before bills existed get theirs now.
+            bill_obj = Bill.objects.create(
+                restaurant=locked_session.restaurant, table_session=locked_session, status=BillStatus.REQUESTED)
+        snapshot_bill(bill_obj, locked_session)  # the bill may have changed since it was requested
+
         tendered_dec = Decimal(str(tendered_amount)).quantize(Decimal('0.01'))
-        
-        if method == PaymentMethod.CASH:
-            if tendered_dec < remaining_balance:
-                raise ValidationError(f"Tendered cash (${tendered_dec}) is less than bill total (${remaining_balance}).")
-            change_amount = (tendered_dec - remaining_balance).quantize(Decimal('0.01'))
-        else:
-            tendered_dec = remaining_balance
-            change_amount = Decimal('0.00')
+        if tendered_dec < remaining_balance:
+            raise ValidationError(f"Tendered cash (${tendered_dec}) is less than bill total (${remaining_balance}).")
+        change_amount = (tendered_dec - remaining_balance).quantize(Decimal('0.01'))
 
         payment = Payment.objects.create(
             restaurant=locked_session.restaurant,
             table_session=locked_session,
+            bill=bill_obj,
+            shift=shift,
             payment_code=generate_payment_code(),
             method=method,
             amount=remaining_balance,
@@ -146,26 +168,15 @@ def record_cash_payment(
             idempotency_key=idempotency_key
         )
 
-        # Update Session state to CLOSED and release table immediately
-        locked_session.status = SessionStatus.CLOSED
-        locked_session.paid_at = timezone.now()
-        locked_session.closed_at = timezone.now()
-        locked_session.closed_by = cashier_user
-        locked_session.close_reason = "Payment Completed"
-        locked_session.save(update_fields=['status', 'paid_at', 'closed_at', 'closed_by', 'close_reason', 'updated_at'])
+        bill_obj.status = BillStatus.PAID
+        bill_obj.paid_at = payment.paid_at
+        bill_obj.save(update_fields=['status', 'paid_at', 'updated_at'])
 
-        # Free table for next guests
-        table = RestaurantTable.objects.select_for_update().get(id=locked_session.table_id)
-        table.status = TableStatus.AVAILABLE
-        table.save(update_fields=['status', 'updated_at'])
+        locked_session.status = SessionStatus.PAID
+        locked_session.paid_at = payment.paid_at
+        locked_session.save(update_fields=['status', 'paid_at', 'updated_at'])
+        table = locked_session.table
 
-        # Mark all billable orders as COMPLETED
-        Order.objects.filter(
-            table_session=locked_session,
-            status__in=BILLABLE_ORDER_STATUSES
-        ).update(status=OrderStatus.COMPLETED, updated_at=timezone.now())
-
-        # Audit
         log_audit_event(
             actor_user=cashier_user,
             actor_role=getattr(cashier_user, 'role', 'CASHIER'),
@@ -177,13 +188,11 @@ def record_cash_payment(
                 'amount': str(payment.amount),
                 'tendered': str(payment.tendered_amount),
                 'change': str(payment.change_amount),
-                'session_closed': True,
-                'table_freed': table.table_code,
+                'bill_id': str(bill_obj.id),
             },
             request_id=request_id
         )
 
-        # Outbox event
         create_outbox_event(
             aggregate_type='PAYMENT',
             aggregate_id=payment.id,
@@ -192,25 +201,15 @@ def record_cash_payment(
                 'payment_id': str(payment.id),
                 'payment_code': payment.payment_code,
                 'table_session_id': str(locked_session.id),
+                'session_token': locked_session.public_token,
                 'table_code': table.table_code,
-                'table_name': table.display_name,
+                'table_name': locked_session.label,
                 'amount': str(payment.amount),
                 'tendered_amount': str(payment.tendered_amount),
                 'change_amount': str(payment.change_amount),
             }
         )
 
-        create_outbox_event(
-            aggregate_type='TABLE_SESSION',
-            aggregate_id=locked_session.id,
-            event_type='SESSION_CLOSED',
-            payload={
-                'session_id': str(locked_session.id),
-                'public_token': locked_session.public_token,
-                'table_id': str(table.id),
-                'table_code': table.table_code,
-                'status': locked_session.status,
-            }
-        )
-
+        # Closes the session and frees the table right away when every item is already served.
+        settle_paid_session(locked_session.id, actor=cashier_user, request_id=request_id)
         return payment

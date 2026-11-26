@@ -1,24 +1,7 @@
 <nav class="app-tabbar" aria-label="Navegasaun admin">
   <button type="button" class="app-tab" data-panel="overview-panel"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span class="label" data-i18n="nav_overview">Rezumu</span></button>
-  <button type="button" class="app-tab" data-panel="menu-panel"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><span class="label" data-i18n="nav_menu">Menu</span></button>
-  <button type="button" class="app-tab" data-panel="categories-panel"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span class="label" data-i18n="categories_nav">Kategoria</span></button>
+  <button type="button" class="app-tab" data-panel="menu-panel" data-panel-group="menu-panel categories-panel"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span class="label" data-i18n="nav_catalog">Katálogu</span></button>
   <button type="button" class="app-tab" data-panel="tables-panel"><i class="fa-solid fa-qrcode" aria-hidden="true"></i><span class="label" data-i18n="nav_tables">Meza</span></button>
-  <button type="button" class="app-tab" data-bs-toggle="offcanvas" data-bs-target="#moreSheet" aria-controls="moreSheet"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span class="label" data-i18n="nav_more">Seluk</span></button>
+  <button type="button" class="app-tab" data-panel="users-panel"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="label" data-i18n="staff_users">Staff</span></button>
+  <a class="app-tab{% if reports_page %} is-active{% endif %}" href="{% url 'reports' %}" data-nav="reports" aria-current="{% if reports_page %}page{% else %}false{% endif %}"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span class="label" data-i18n="reports">Relatóriu</span></a>
 </nav>
-
-<div class="offcanvas offcanvas-bottom" tabindex="-1" id="moreSheet" aria-labelledby="moreSheetTitle">
-  <div class="sheet-handle" aria-hidden="true"></div>
-  <div class="offcanvas-header">
-    <h2 class="offcanvas-title fs-6 fw-bold" id="moreSheetTitle" data-i18n="nav_more">Seluk</h2>
-    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Taka"></button>
-  </div>
-  <div class="offcanvas-body">
-    <ul class="sheet-list">
-      <li><button type="button" class="sheet-list-item" data-panel="users-panel"><i class="fa-solid fa-users" aria-hidden="true"></i><span data-i18n="staff_users">Staff</span></button></li>
-      <li><a class="sheet-list-item{% if reports_page %} is-active{% endif %}" href="{% url 'reports' %}" data-nav="reports" aria-current="{% if reports_page %}page{% else %}false{% endif %}"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span data-i18n="reports">Relatóriu</span></a></li>
-      <li><button type="button" class="sheet-list-item" data-panel="audit-panel"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span data-i18n="audit_logs">Auditoria</span></button></li>
-      <li><a class="sheet-list-item" href="{% url 'admin-qr-sheet' %}" target="_blank" rel="noopener"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="btn_print_qr_sheet">Folha Print QR</span></a></li>
-      <li><a class="sheet-list-item text-danger" href="{% url 'logout' %}" data-logout><i class="fa-solid fa-arrow-right-from-bracket text-danger" aria-hidden="true"></i><span data-i18n="logout">Sai</span></a></li>
-    </ul>
-  </div>
-</div>

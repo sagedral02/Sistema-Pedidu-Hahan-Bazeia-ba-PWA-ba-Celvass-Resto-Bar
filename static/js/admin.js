@@ -72,7 +72,7 @@
   // Menu item form
   // ------------------------------------------------------------------
   function resetMenuForm() {
-    ['menu-item-id', 'menu-form-name', 'menu-form-price', 'menu-form-sku', 'menu-form-desc', 'menu-form-prepnote', 'menu-form-imgurl', 'menu-form-imgfile'].forEach((id) => {
+    ['menu-item-id', 'menu-form-name', 'menu-form-price', 'menu-form-sku', 'menu-form-desc', 'menu-form-prepnote', 'menu-form-imgurl', 'menu-form-imgfile', 'menu-form-quota'].forEach((id) => {
       $(id).value = '';
     });
     $('menu-form-sort').value = '0';
@@ -106,10 +106,109 @@
       $('menu-form-prepnote').value = item.preparation_note || '';
       $('menu-form-imgurl').value = item.image_url || '';
       $('menu-form-availability').value = item.availability || 'AVAILABLE';
+      $('menu-form-quota').value = item.daily_quota || '';
       $('menu-form-featured').checked = Boolean(item.is_featured);
       $('menu-image-preview').src = item.display_image || DEFAULT_IMG;
+      $('menu-form-reviews').hidden = true;
       modal('menuItemModal').show();
+      if (item.rating_count) {
+        loadMenuReviews(item.id, $('menu-form-reviews-list')).then((ok) => {
+          if (ok && $('menu-item-id').value === String(item.id)) $('menu-form-reviews').hidden = false;
+        });
+      }
     } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Customer ratings
+  // ------------------------------------------------------------------
+  function starsHtml(value) {
+    const full = Math.round(Number(value) || 0);
+    let out = '';
+    for (let i = 1; i <= 5; i += 1) {
+      out += `<i class="fa-${i <= full ? 'solid' : 'regular'} fa-star" aria-hidden="true"></i>`;
+    }
+    return `<span class="review-stars" aria-label="${escapeHtml(String(value))}/5">${out}</span>`;
+  }
+
+  function renderReviews(data) {
+    const count = Number(data.rating_count) || 0;
+    const head = `<div class="review-summary">${starsHtml(data.rating_avg)}<strong class="tabular">${Number(data.rating_avg || 0).toFixed(1)}</strong><span class="text-tertiary tabular">(${count})</span></div>`;
+    if (!data.reviews || !data.reviews.length) {
+      return `${head}<div class="text-tertiary fs-8">${escapeHtml(t('menu_no_rating'))}</div>`;
+    }
+    const rows = data.reviews.map((r) => `
+      <li class="review-item">
+        <div class="d-flex align-items-center justify-content-between gap-2">${starsHtml(r.stars)}<span class="fs-8 text-tertiary tabular">${escapeHtml(r.date)}</span></div>
+        ${r.comment ? `<div class="review-comment">${escapeHtml(r.comment)}</div>` : ''}
+      </li>`).join('');
+    return `${head}<div class="fs-8 text-tertiary mb-1">${escapeHtml(t('menu_reviews_latest'))}</div><ul class="review-list">${rows}</ul>`;
+  }
+
+  async function loadMenuReviews(itemId, target) {
+    target.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
+    try {
+      const data = await apiGet(`/api/v1/admin/menu-items/${itemId}/reviews/`);
+      target.innerHTML = renderReviews(data);
+      return true;
+    } catch (e) {
+      target.innerHTML = '';
+      showToast(e.message, 'error');
+      return false;
+    }
+  }
+
+  function openMenuReviews(itemId, itemName) {
+    $('menu-reviews-modal-title').textContent = `${t('menu_reviews_title')}: ${itemName || ''}`;
+    modal('menuReviewsModal').show();
+    loadMenuReviews(itemId, $('menu-reviews-modal-list'));
+  }
+
+  // ------------------------------------------------------------------
+  // Inline daily quota
+  // ------------------------------------------------------------------
+  function markQuotaDirty(input) {
+    const form = input.closest('form');
+    const save = form && form.querySelector('.quota-inline-save');
+    if (save) save.hidden = input.value.trim() === (input.dataset.initial || '');
+    input.classList.remove('is-invalid');
+  }
+
+  async function saveInlineQuota(itemId, form) {
+    const input = form.querySelector('input[name="daily_quota"]');
+    const btn = form.querySelector('.quota-inline-save');
+    const raw = input.value.trim();
+    if (raw !== '' && (!/^\d+$/.test(raw) || Number(raw) < 1)) {
+      input.classList.add('is-invalid');
+      input.focus();
+      showToast(t('stock_quota_invalid'), 'warning');
+      return;
+    }
+    setBusy(btn, true);
+    try {
+      const res = await apiRequest(`/api/v1/admin/menu-items/${itemId}/quota/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ daily_quota: raw === '' ? null : Number(raw) }),
+      });
+      const av = (res && res.availability) || {};
+      input.dataset.initial = raw;
+      const row = form.closest('tr');
+      if (row) {
+        const left = row.querySelector('.js-quota-left');
+        if (left) left.textContent = av.remaining === null || av.remaining === undefined ? '-' : av.remaining;
+        const sold = row.querySelector('.js-quota-sold');
+        if (sold && av.sold !== undefined) sold.textContent = av.sold;
+      }
+      setBusy(btn, false);
+      btn.hidden = true;
+      showToast(t('stock_quota_saved'), 'success');
+      // The stock badge and close/reopen button depend on the new quota.
+      if (av.state && row && row.dataset.state !== av.state) reloadSoon('#menu-panel');
+    } catch (e) {
+      setBusy(btn, false);
+      input.classList.add('is-invalid');
       showToast(e.message, 'error');
     }
   }
@@ -165,6 +264,7 @@
       fd.append('preparation_note', $('menu-form-prepnote').value.trim());
       fd.append('image_url', $('menu-form-imgurl').value.trim());
       fd.append('availability', $('menu-form-availability').value);
+      fd.append('daily_quota', $('menu-form-quota').value.trim());
       fd.append('is_featured', $('menu-form-featured').checked ? 'true' : 'false');
       const file = $('menu-form-imgfile').files[0];
       if (file) fd.append('image', file);
@@ -204,6 +304,31 @@
     try {
       await apiPost(`/api/v1/admin/menu-items/${itemId}/toggle-availability/`);
       showToast(t('stock_updated'), 'success');
+      reloadSoon('#menu-panel');
+    } catch (e) {
+      showToast(e.message, 'error');
+      setBusy(btn, false);
+    }
+  }
+
+  async function closeMenuItemToday(itemId, btn) {
+    setBusy(btn, true);
+    try {
+      const res = await apiPost(`/api/v1/admin/menu-items/${itemId}/close-today/`, {});
+      const cancelled = res && res.cancelled_items ? ` (${res.cancelled_items} ${t('stock_cancelled_portions')})` : '';
+      showToast(t('stock_closed_toast') + cancelled, 'success');
+      reloadSoon('#menu-panel');
+    } catch (e) {
+      showToast(e.message, 'error');
+      setBusy(btn, false);
+    }
+  }
+
+  async function reopenMenuItem(itemId, btn) {
+    setBusy(btn, true);
+    try {
+      await apiPost(`/api/v1/admin/menu-items/${itemId}/reopen/`, {});
+      showToast(t('stock_reopened_toast'), 'success');
       reloadSoon('#menu-panel');
     } catch (e) {
       showToast(e.message, 'error');
@@ -685,11 +810,16 @@
     goToCategoryInMenuPanel,
     openCreateMenuItemModal,
     openEditMenuItemModal,
+    openMenuReviews,
+    markQuotaDirty,
+    saveInlineQuota,
     updateMenuImagePreview,
     handleMenuFileSelect,
     submitMenuItemForm,
     confirmDeleteMenuItem,
     toggleMenuItem,
+    closeMenuItemToday,
+    reopenMenuItem,
     openCreateCategoryModal,
     openEditCategoryModal,
     autoSlugCategory,

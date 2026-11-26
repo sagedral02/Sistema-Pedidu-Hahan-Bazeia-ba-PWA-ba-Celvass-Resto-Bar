@@ -48,7 +48,12 @@ class MenuItem(models.Model):
     is_featured = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
     preparation_note = models.TextField(blank=True, null=True)
-    
+    # Portions the kitchen can make per business day. Empty means no limit.
+    daily_quota = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    # Customer ratings (recomputed from MenuRating whenever a rating is saved).
+    rating_avg = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal('0.00'))
+    rating_count = models.PositiveIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -80,3 +85,47 @@ class MenuItem(models.Model):
     @property
     def is_available(self):
         return self.availability == ItemAvailability.AVAILABLE
+
+
+class DailyMenuState(models.Model):
+    """A menu item closed by staff for one business day (the quota itself lives on MenuItem)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='daily_states')
+    business_date = models.DateField(db_index=True)
+    is_closed = models.BooleanField(default=True)
+    reason = models.CharField(max_length=255, blank=True, default="")
+    closed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    closed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'daily_menu_states'
+        constraints = [
+            models.UniqueConstraint(fields=['menu_item', 'business_date'], name='unique_menu_state_per_day'),
+        ]
+
+    def __str__(self):
+        return f"{self.menu_item_id} {self.business_date} closed={self.is_closed}"
+
+
+class MenuRating(models.Model):
+    """One customer's stars (1-5) for one dish of a finished table session."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='ratings')
+    table_session = models.ForeignKey('tables.TableSession', on_delete=models.CASCADE, related_name='menu_ratings')
+    stars = models.PositiveSmallIntegerField()
+    comment = models.CharField(max_length=300, blank=True, default="")
+    device_token = models.CharField(max_length=128, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'menu_ratings'
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(fields=['table_session', 'menu_item'], name='unique_rating_per_session_item'),
+        ]
+
+    def __str__(self):
+        return f"{self.menu_item_id} {self.stars}*"

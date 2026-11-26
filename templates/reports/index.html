@@ -16,7 +16,7 @@
       <h1 class="page-title" id="reports-title" data-i18n="reports">Relatóriu</h1>
       <p class="page-subtitle" data-i18n="rpt_page_desc">Haree vendas no atividade restaurante, depois download CSV ka PDF.</p>
     </div>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="d-flex flex-wrap gap-2" id="rpt-downloads">
       <a class="btn btn-secondary-app" id="rpt-download-csv" href="{% url 'reports-export' %}?format=csv" download><i class="fa-solid fa-file-csv" aria-hidden="true"></i><span data-i18n="rpt_btn_csv">Download CSV</span></a>
       <a class="btn btn-primary" id="rpt-download-pdf" href="{% url 'reports-export' %}?format=pdf" download><i class="fa-solid fa-file-pdf" aria-hidden="true"></i><span data-i18n="rpt_btn_pdf">Download PDF</span></a>
     </div>
@@ -25,6 +25,7 @@
   <div class="segmented mb-3" role="tablist" aria-label="Relatóriu">
     <button type="button" role="tab" class="is-active" id="rpt-tab-summary" data-tab="summary" aria-selected="true" aria-controls="rpt-pane-summary"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> <span data-i18n="rpt_tab_summary">Rezumu</span></button>
     <button type="button" role="tab" id="rpt-tab-history" data-tab="history" aria-selected="false" aria-controls="rpt-pane-history"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> <span data-i18n="rpt_tab_history">Istóriku</span></button>
+    {% if is_admin_view %}<button type="button" role="tab" id="rpt-tab-audit" data-tab="audit" aria-selected="false" aria-controls="rpt-pane-audit"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> <span data-i18n="audit_logs">Auditoria</span></button>{% endif %}
   </div>
 
   <div class="surface surface-pad mb-3">
@@ -34,10 +35,12 @@
         <select class="form-select" id="rpt-type" name="type">
           <option value="daily_sales" data-i18n="rpt_type_daily_sales">Vendas loron-loron</option>
           <option value="menu_sales" data-i18n="rpt_type_menu_sales">Vendas tuir menu</option>
-          <option value="payment_methods" data-i18n="rpt_type_payment_methods">Métodu pagamentu</option>
+          <option value="order_types" data-i18n="rpt_type_order_types">Tipu pedidu</option>
           <option value="cashiers" data-i18n="rpt_type_cashiers">Tuir kaixa</option>
           <option value="exceptions" data-i18n="rpt_type_exceptions">Rekuza, kansela no anula</option>
+          <option value="shifts" data-i18n="rpt_type_shifts">Turnu kaixa</option>
           <option value="table_usage" data-i18n="rpt_type_table_usage">Uza meza</option>
+          <option value="visitors" data-i18n="rpt_type_visitors">Vizitante</option>
         </select>
       </div>
 
@@ -57,9 +60,9 @@
             <label class="form-label" for="rpt-h-source" data-i18n="rpt_filter_source">Orijen</label>
             <select class="form-select form-select-sm" id="rpt-h-source"></select>
           </div>
-          <div class="col-6 col-md-3 col-lg-2" id="rpt-h-method-wrap" hidden>
-            <label class="form-label" for="rpt-h-method" data-i18n="rpt_filter_method">Métodu</label>
-            <select class="form-select form-select-sm" id="rpt-h-method"></select>
+          <div class="col-6 col-md-3 col-lg-2" id="rpt-h-type-wrap">
+            <label class="form-label" for="rpt-h-type" data-i18n="rpt_filter_order_type">Tipu pedidu</label>
+            <select class="form-select form-select-sm" id="rpt-h-type"></select>
           </div>
           {% if cashier_choices %}
           <div class="col-6 col-md-3 col-lg-2" id="rpt-h-cashier-wrap">
@@ -79,6 +82,26 @@
           </div>
         </div>
       </div>
+
+      {% if is_admin_view %}
+      <div class="col-12" id="rpt-audit-controls" hidden>
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-4 col-lg-3">
+            <label class="form-label" for="rpt-a-entity" data-i18n="rpt_filter_entity">Entidade</label>
+            <select class="form-select form-select-sm" id="rpt-a-entity">
+              <option value="" data-i18n="rpt_all_entities">Entidade hotu</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-8 col-lg">
+            <label class="form-label visually-hidden" for="rpt-a-search" data-i18n="rpt_audit_search">Buka asaun, entidade ka atór</label>
+            <div class="search-field">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" class="form-control form-control-sm" id="rpt-a-search" maxlength="80" autocomplete="off" placeholder="Buka asaun, entidade ka atór" data-i18n-placeholder="rpt_audit_search">
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="col-12">
         <span class="form-label d-block" id="rpt-period-label" data-i18n="rpt_label_period">Períodu</span>
@@ -147,6 +170,28 @@
       </div>
     </nav>
   </div>
+
+  {% if is_admin_view %}
+  <!-- Audit tab (admin only) -->
+  <div id="rpt-pane-audit" role="tabpanel" aria-labelledby="rpt-tab-audit" hidden>
+    <div class="kpi-grid mb-3" id="rpt-a-kpi" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"></div>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table table-app table-hover table-stack" id="rpt-a-table">
+          <thead id="rpt-a-head"></thead>
+          <tbody id="rpt-a-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <nav class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" id="rpt-a-pager" aria-label="Pagination" hidden>
+      <span class="text-tertiary fs-7" id="rpt-a-pageinfo"></span>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-secondary-app" id="rpt-a-prev"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i><span data-i18n="rpt_btn_prev">Antes</span></button>
+        <button type="button" class="btn btn-sm btn-secondary-app" id="rpt-a-next"><span data-i18n="rpt_btn_next">Tuir mai</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+      </div>
+    </nav>
+  </div>
+  {% endif %}
 </section>
 {% endblock %}
 
@@ -165,7 +210,10 @@
   window.CELVASS_RESTAURANT = {
     name: "{{ current_restaurant.name|escapejs }}",
     address: "{{ current_restaurant.address|default:''|escapejs }}",
-    phone: "{{ current_restaurant.phone|default:''|escapejs }}"
+    phone: "{{ current_restaurant.phone|default:''|escapejs }}",
+    whatsapp: "{{ current_restaurant.whatsapp|default:''|escapejs }}",
+    note: "{{ current_restaurant.receipt_note|default:''|escapejs }}",
+    logo: "{% if brand.has_logo %}{{ brand.logo_png|escapejs }}{% endif %}"
   };
   window.CELVASS_REPORTS = {
     dataUrl: "{% url 'reports-data' %}",
@@ -174,6 +222,7 @@
       orders: "{% url 'reports-history-orders' %}",
       transactions: "{% url 'reports-history-transactions' %}"
     },
+    auditUrl: "{% url 'reports-audit' %}",
     restaurant: "{{ current_restaurant.name|escapejs }}",
     maxRangeDays: {{ max_range_days }},
     isAdmin: {% if is_admin_view %}true{% else %}false{% endif %}
@@ -182,4 +231,5 @@
 <script src="{% static 'js/receipt.js' %}"></script>
 <script src="{% static 'js/reports.js' %}"></script>
 <script src="{% static 'js/reports-history.js' %}"></script>
+{% if is_admin_view %}<script src="{% static 'js/reports-audit.js' %}"></script>{% endif %}
 {% endblock %}

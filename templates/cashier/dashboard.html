@@ -4,23 +4,27 @@
 {% block title %}Kaixa - {{ current_restaurant.name }}{% endblock %}
 {% block role %}cashier{% endblock %}
 {% block default_panel %}pos-panel{% endblock %}
+{% block panel_redirects %}bill-alerts-panel=#service-panel/bills shift-close-panel=#shift-panel orders-history-panel=/reports/#history{% endblock %}
 
 {% block topbar %}{% include 'base/_nav_cashier.html' %}{% endblock %}
 {% block tabbar %}{% include 'base/_tabbar_cashier.html' %}{% endblock %}
 
 {% block content %}
 
-<!-- POS: incoming queue + tables -->
+<!-- POS: queue, tables and take away -->
 <section class="app-panel" id="pos-panel" aria-labelledby="pos-title">
   <div class="page-head">
     <div>
       <h1 class="page-title" id="pos-title" data-i18n="cashier_title">Kaixa</h1>
       <p class="page-subtitle" data-i18n="cashier_subtitle">Verifika pedidu, jere meza no simu pagamentu.</p>
     </div>
-    <div class="segmented d-none d-md-inline-flex d-lg-none" role="tablist" aria-label="Haree">
-      <button type="button" role="tab" data-panel="pos-panel" data-view="queue"><span data-i18n="nav_queue">Fila</span></button>
-      <button type="button" role="tab" data-panel="pos-panel" data-view="tables"><span data-i18n="nav_tables">Meza</span></button>
-    </div>
+    <button type="button" class="btn btn-primary" onclick="posOrder.open()"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="csh_btn_new_order">Pedidu foun</span></button>
+  </div>
+
+  <div class="segmented mb-3" role="tablist" aria-label="POS">
+    <button type="button" role="tab" data-panel="pos-panel" data-view="queue"><span data-i18n="csh_view_queue">Fila</span> <span class="nav-count" data-count-for="pending"></span></button>
+    <button type="button" role="tab" data-panel="pos-panel" data-view="tables"><span data-i18n="csh_view_tables">Meza</span></button>
+    <button type="button" role="tab" data-panel="pos-panel" data-view="takeaway"><span data-i18n="csh_view_takeaway">Take away</span> <span class="nav-count" data-count-for="takeaway"></span></button>
   </div>
 
   <div class="pos-layout" data-view-host data-default-view="queue">
@@ -49,40 +53,116 @@
         <div class="tables-grid" id="tables-grid-container"></div>
       </div>
     </div>
+
+    <div class="pos-takeaway">
+      <div class="surface surface-pad">
+        <div class="section-head">
+          <h2 class="section-title"><span data-i18n="csh_view_takeaway">Take away</span> <span class="count" id="takeaway-total-label">0</span></h2>
+          <button type="button" class="btn btn-sm btn-secondary-app" onclick="posOrder.open({ destination: 'TAKEAWAY' })"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="csh_btn_new_order">Pedidu foun</span></button>
+        </div>
+        <div class="tables-grid" id="takeaway-list-container" aria-live="polite"></div>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- Bill requests -->
-<section class="app-panel" id="bill-alerts-panel" aria-labelledby="bills-title" hidden>
+<!-- Service desk: bills and kitchen notices -->
+<section class="app-panel" id="service-panel" aria-labelledby="service-title" hidden>
   <div class="page-head">
     <div>
-      <h1 class="page-title" id="bills-title" data-i18n="bill_alerts_title">Meza ne'ebé husu konta</h1>
-      <p class="page-subtitle" data-i18n="bill_alerts_subtitle">Atende lalais atu bainaka la hein kleur.</p>
+      <h1 class="page-title" id="service-title" data-i18n="csh_service_title">Atendimentu</h1>
+      <p class="page-subtitle" data-i18n="csh_service_desc">Konta no informasaun dapur iha fatin ida.</p>
     </div>
   </div>
-  <div class="tables-grid" id="bill-alerts-container"></div>
+  <div class="segmented mb-3" role="tablist" aria-label="Atendimentu">
+    <button type="button" role="tab" data-panel="service-panel" data-view="bills"><span data-i18n="csh_tab_bills">Konta</span> <span class="nav-count" data-count-for="bills"></span></button>
+    <button type="button" role="tab" data-panel="service-panel" data-view="kitchen"><span data-i18n="csh_tab_kitchen">Info dapur</span> <span class="nav-count" data-count-for="notices"></span></button>
+    <button type="button" role="tab" data-panel="service-panel" data-view="idle"><span data-i18n="csh_tab_idle">Meza la iha atividade</span> <span class="nav-count" data-count-for="idle"></span></button>
+  </div>
+  <div class="service-host" data-view-host data-default-view="bills">
+    <div data-pane="bills"><div class="tables-grid" id="bill-alerts-container"></div></div>
+    <div data-pane="kitchen"><div class="tables-grid" id="kitchen-notices-container" aria-live="polite"></div></div>
+    <div data-pane="idle"><div class="tables-grid" id="idle-tables-container" aria-live="polite"></div></div>
+  </div>
 </section>
 
-<!-- Shift close -->
-<section class="app-panel" id="shift-close-panel" aria-labelledby="shift-title" hidden>
+<!-- Menu & Stock (cashier can only close a dish for today or reopen it) -->
+<section class="app-panel" id="stock-panel" aria-labelledby="stock-title" hidden>
   <div class="page-head">
     <div>
-      <h1 class="page-title" id="shift-title" data-i18n="z_report_title">Fechu kaixa (Z-report)</h1>
-      <p class="page-subtitle">{{ user.get_full_name }} &middot; <span id="shift-report-timestamp">-</span></p>
+      <h1 class="page-title" id="stock-title" data-i18n="csh_stock_title">Menu &amp; Stok</h1>
+      <p class="page-subtitle" data-i18n="csh_stock_desc">Marka menu hotu ba ohin ka loke fali.</p>
     </div>
-    <button type="button" class="btn btn-primary" onclick="cashierApp.printShiftReport()"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="print_z_report">Imprime</span></button>
+  </div>
+  <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+    <div class="search-field flex-shrink-0" style="min-width:240px">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" id="stock-search" class="form-control" placeholder="Buka menu" data-i18n-placeholder="csh_order_search" aria-label="Buka menu" oninput="cashierApp.renderStock()">
+    </div>
+    <div class="chip-row align-items-center min-w-0" id="stock-category-chips" role="toolbar" aria-label="Kategoria"></div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-responsive">
+      <table class="table table-app table-stack">
+        <thead>
+          <tr>
+            <th data-i18n="th_menu_col">Menu</th>
+            <th data-i18n="th_stock_status">Stok</th>
+            <th class="text-end" data-i18n="stock_th_quota">Kuota</th>
+            <th class="text-end" data-i18n="stock_th_sold">Faan</th>
+            <th class="text-end" data-i18n="stock_th_left">Sobra</th>
+            <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
+          </tr>
+        </thead>
+        <tbody id="stock-list-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Shift -->
+<section class="app-panel" id="shift-panel" aria-labelledby="shift-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="shift-title" data-i18n="csh_shift_title">Turnu kaixa</h1>
+      <p class="page-subtitle">{{ user.get_full_name|default:user.username }} &middot; <span data-i18n="csh_shift_desc">Loke turnu ho osan inisiál, taka ho sura osan.</span></p>
+    </div>
+    <button type="button" class="btn btn-secondary-app" id="btn-print-z" onclick="cashierApp.printShiftReport()"><i class="fa-solid fa-print" aria-hidden="true"></i><span data-i18n="csh_shift_print">Imprime Z-report</span></button>
   </div>
 
-  <div class="kpi-grid mb-3" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
-    <div class="kpi"><div class="kpi-label" data-i18n="cash_total">Osan-maran</div><div class="kpi-value" id="shift-cash-total">$0.00</div></div>
-    <div class="kpi"><div class="kpi-label" data-i18n="card_total">Kartaun / transferénsia</div><div class="kpi-value" id="shift-other-total">$0.00</div></div>
-    <div class="kpi"><div class="kpi-label" data-i18n="shift_revenue">Totál ohin</div><div class="kpi-value text-accent" id="shift-grand-total">$0.00</div></div>
+  <div id="shift-open-box" hidden>
+    <div class="callout tone-warning mb-3"><i class="fa-solid fa-vault" aria-hidden="true"></i><div data-i18n="csh_shift_none">Seidauk iha turnu loke.</div></div>
+    <form class="surface surface-pad" style="max-width:420px" onsubmit="event.preventDefault(); cashierApp.openShift();" novalidate>
+      <label class="form-label" for="shift-opening-cash" data-i18n="csh_shift_opening_cash">Osan inisiál ($)</label>
+      <input type="number" inputmode="decimal" step="0.01" min="0" class="form-control form-control-lg tabular mb-3" id="shift-opening-cash" required>
+      <button type="submit" class="btn btn-primary w-100" id="btn-open-shift"><i class="fa-solid fa-door-open" aria-hidden="true"></i><span data-i18n="csh_shift_btn_open">Loke turnu</span></button>
+    </form>
   </div>
 
-  <div class="surface surface-pad" style="max-width:560px">
-    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="paid_tables_count">Meza selu ona</span><strong class="tabular" id="shift-paid-sessions-count">0</strong></div>
-    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="completed_orders_count">Pedidu remata</span><strong class="tabular" id="shift-completed-orders-count">0</strong></div>
-    <div class="d-flex justify-content-between py-1"><span class="text-secondary-app" data-i18n="payments_count">Transasaun</span><strong class="tabular" id="shift-payments-count">0</strong></div>
+  <div id="shift-current-box" hidden>
+    <p class="text-secondary-app mb-2"><span data-i18n="csh_shift_active">Turnu loke husi</span> <strong id="shift-opened-at">-</strong></p>
+    <div class="kpi-grid mb-3" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="kpi"><div class="kpi-label" data-i18n="csh_shift_opening">Osan inisiál</div><div class="kpi-value" id="shift-opening">$0.00</div></div>
+      <div class="kpi"><div class="kpi-label" data-i18n="csh_shift_cash_sales">Faan ho osan</div><div class="kpi-value" id="shift-cash-sales">$0.00</div></div>
+      <div class="kpi"><div class="kpi-label" data-i18n="csh_shift_expected">Osan tenke iha</div><div class="kpi-value text-accent" id="shift-expected">$0.00</div></div>
+      <div class="kpi"><div class="kpi-label" data-i18n="csh_shift_payments">Transasaun</div><div class="kpi-value" id="shift-payments">0</div></div>
+    </div>
+    <form class="surface surface-pad" style="max-width:520px" onsubmit="event.preventDefault(); cashierApp.closeShift();" novalidate>
+      <label class="form-label" for="shift-counted-cash" data-i18n="csh_shift_counted">Osan sura ($)</label>
+      <input type="number" inputmode="decimal" step="0.01" min="0" class="form-control form-control-lg tabular mb-2" id="shift-counted-cash" oninput="cashierApp.updateShiftDifference()" required>
+      <div class="change-row mb-3" id="shift-difference-row">
+        <span class="fw-semibold" data-i18n="csh_shift_difference">Diferensa</span>
+        <span class="fs-5 fw-800 tabular" id="shift-difference">$0.00</span>
+      </div>
+      <label class="form-label" for="shift-note" data-i18n="csh_shift_note">Nota diferensa</label>
+      <textarea class="form-control mb-3" id="shift-note" rows="2" maxlength="500"></textarea>
+      <button type="submit" class="btn btn-primary w-100" id="btn-close-shift"><i class="fa-solid fa-lock" aria-hidden="true"></i><span data-i18n="csh_shift_btn_close">Taka turnu</span></button>
+    </form>
+  </div>
+
+  <div class="surface surface-pad mt-3" id="shift-last-box" style="max-width:520px" hidden>
+    <h2 class="section-title mb-2" data-i18n="csh_shift_last">Turnu ikus</h2>
+    <div id="shift-last-body"></div>
   </div>
 </section>
 {% endblock %}
@@ -99,13 +179,123 @@
       <div class="modal-body">
         <label class="form-label" for="open-session-guests" data-i18n="guest_count_label">Totál bainaka</label>
         <input type="number" inputmode="numeric" class="form-control" id="open-session-guests" value="2" min="1" max="25" required>
-        <div class="form-text" data-i18n="guest_count_hint">Entre 1 no 25.</div>
+        <div class="form-text" id="open-session-guests-hint" aria-live="polite">1–25</div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
         <button type="submit" class="btn btn-primary"><span data-i18n="btn_confirm_open">Loke sesaun</span></button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Padlock: close a table normally or as "left without paying" -->
+<div class="modal fade modal-sheet" id="closeSessionModal" tabindex="-1" aria-labelledby="closeSessionTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:460px">
+    <form class="modal-content" onsubmit="event.preventDefault(); cashierApp.submitCloseSession();" novalidate>
+      <div class="modal-header">
+        <h2 class="modal-title" id="closeSessionTitle"><span data-i18n="close_session">Taka sesaun</span> &middot; <span id="close-session-table-name"></span></h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <fieldset class="close-mode-list">
+          <legend class="visually-hidden" data-i18n="close_session">Taka sesaun</legend>
+          <label class="close-mode" for="close-mode-normal">
+            <input class="form-check-input" type="radio" name="close-mode" id="close-mode-normal" value="normal" onchange="cashierApp.updateCloseMode()">
+            <span>
+              <span class="fw-bold d-block" data-i18n="csh_close_normal">Taka normál</span>
+              <span class="fs-7 text-tertiary d-block" data-i18n="csh_close_normal_desc">Konta selu ona (ka la iha buat ruma atu selu).</span>
+              <span class="fs-7 text-danger d-block" id="close-mode-normal-hint" data-i18n="csh_close_normal_locked">Seidauk bele: sei iha osan atu selu.</span>
+            </span>
+          </label>
+          <label class="close-mode is-danger" for="close-mode-walkout">
+            <input class="form-check-input" type="radio" name="close-mode" id="close-mode-walkout" value="walkout" onchange="cashierApp.updateCloseMode()">
+            <span>
+              <span class="fw-bold d-block" data-i18n="csh_close_walkout">Bainaka sai la selu</span>
+              <span class="fs-7 text-tertiary d-block" data-i18n="csh_close_walkout_desc">Meza sai livre. Osan ne'ebé la selu rejista hanesan lakon iha relatóriu.</span>
+            </span>
+          </label>
+        </fieldset>
+        <div id="close-session-walkout-fields" hidden>
+          <div class="callout tone-danger my-3">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <div><span data-i18n="csh_walkout_amount">Lakon:</span> <strong class="tabular" id="close-session-unpaid">$0.00</strong></div>
+          </div>
+          <label class="form-label" for="close-session-reason"><span data-i18n="csh_walkout_reason">Razaun</span> *</label>
+          <textarea class="form-control" id="close-session-reason" rows="2" maxlength="300" required></textarea>
+          <div class="invalid-feedback" data-i18n="csh_walkout_reason_required">Hakerek razaun (minimu karakter 3).</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary-app" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="submit" class="btn btn-primary" id="btn-close-session-submit"><i class="fa-solid fa-lock" aria-hidden="true"></i><span data-i18n="close_session">Taka sesaun</span></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Cashier order screen (catalog + cart) -->
+<div class="modal fade" id="posOrderModal" tabindex="-1" aria-labelledby="posOrderTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-lg-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="posOrderTitle" data-i18n="csh_order_title">Pedidu foun</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="pos-order-tabs" role="tablist" aria-label="Pedidu">
+        <button type="button" role="tab" id="pos-tab-menu" class="is-active" aria-selected="true" onclick="posOrder.showPane('menu')"><i class="fa-solid fa-utensils" aria-hidden="true"></i><span data-i18n="csh_order_tab_menu">Menu</span></button>
+        <button type="button" role="tab" id="pos-tab-cart" aria-selected="false" onclick="posOrder.showPane('cart')"><i class="fa-solid fa-basket-shopping" aria-hidden="true"></i><span data-i18n="csh_order_cart">Karrinhu</span> <span class="count" id="pos-order-count">0</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="pos-order" id="pos-order-body" data-pane="menu">
+          <div class="pos-order-catalog">
+            <div class="search-field mb-2">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" id="pos-order-search" class="form-control" placeholder="Buka menu" data-i18n-placeholder="csh_order_search" aria-label="Buka menu" autocomplete="off">
+            </div>
+            <div class="chip-row mb-2" id="pos-order-chips" role="toolbar" aria-label="Kategoria"></div>
+            <div class="pos-order-grid" id="pos-order-grid"></div>
+          </div>
+          <div class="pos-order-cart">
+            <div class="surface surface-pad">
+              <h3 class="section-title mb-2" data-i18n="csh_order_cart">Karrinhu</h3>
+              <div id="pos-order-lines"></div>
+              <div class="d-flex justify-content-between align-items-center pt-2 mt-2 border-top">
+                <span class="fw-bold" data-i18n="grand_total">Totál</span>
+                <span class="price fs-5" id="pos-order-total">$0.00</span>
+              </div>
+
+              <div class="form-label mt-3" data-i18n="csh_order_destination">Ba ne'ebé</div>
+              <div class="segmented mb-2" role="group" aria-label="Destino">
+                <button type="button" id="pos-dest-takeaway" onclick="posOrder.setDestination('TAKEAWAY')"><span data-i18n="csh_view_takeaway">Take away</span></button>
+                <button type="button" id="pos-dest-table" onclick="posOrder.setDestination('TABLE')"><span data-i18n="csh_order_dest_table">Meza</span></button>
+              </div>
+              <div id="pos-dest-takeaway-fields">
+                <label class="form-label" for="pos-order-customer" data-i18n="csh_order_customer_name">Naran kliente (opsionál)</label>
+                <input type="text" class="form-control mb-2" id="pos-order-customer" maxlength="80" autocomplete="off">
+              </div>
+              <div id="pos-dest-table-fields" hidden>
+                <label class="form-label" for="pos-order-table" data-i18n="csh_order_choose_table">Hili meza</label>
+                <select class="form-select mb-2" id="pos-order-table"></select>
+                <div class="form-text text-danger mb-2" id="pos-order-no-tables" hidden data-i18n="csh_order_no_open_tables">La iha meza ho sesaun loke. Loke sesaun uluk iha POS.</div>
+              </div>
+              <label class="form-label" for="pos-order-note" data-i18n="csh_order_note">Nota</label>
+              <textarea class="form-control" id="pos-order-note" rows="2" maxlength="500"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer pos-order-footer">
+        <button type="button" class="pos-order-footer-total" onclick="posOrder.showPane('cart')" aria-controls="pos-order-body">
+          <span class="fs-8 text-tertiary"><span id="pos-order-footer-count">0</span> <span data-i18n="items_count">menu</span></span>
+          <strong class="tabular" id="pos-order-footer-sum">$0.00</strong>
+        </button>
+        <button type="button" class="btn btn-secondary-app d-none d-md-inline-flex" data-bs-dismiss="modal"><span data-i18n="cancel">Kansela</span></button>
+        <button type="button" class="btn btn-primary btn-lg flex-grow-1 flex-md-grow-0" id="btn-pos-order-submit" onclick="posOrder.submit()">
+          <i class="fa-solid fa-fire" aria-hidden="true"></i><span data-i18n="csh_order_submit">Haruka ba dapur</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -129,12 +319,6 @@
               <div class="pay-total-value" id="pos-bill-total">$0.00</div>
               <div class="fs-7 text-tertiary" id="pos-paid-status"></div>
             </div>
-
-            <label class="form-label" for="pos-payment-method" data-i18n="payment_method">Metodu pagamentu</label>
-            <select class="form-select mb-3" id="pos-payment-method" onchange="cashierApp.onMethodChange()">
-              <option value="CASH" selected data-i18n="method_cash">Osan-maran (USD)</option>
-              <option value="MANUAL_OTHER" data-i18n="method_card">Kartaun / transferénsia</option>
-            </select>
 
             <div id="pos-cash-fields">
               <label class="form-label" for="pos-tendered-amount" data-i18n="tendered_label">Osan simu ($)</label>
@@ -188,11 +372,17 @@
     name: "{{ current_restaurant.name|escapejs }}",
     address: "{{ current_restaurant.address|default:''|escapejs }}",
     phone: "{{ current_restaurant.phone|default:''|escapejs }}",
+    whatsapp: "{{ current_restaurant.whatsapp|default:''|escapejs }}",
+    note: "{{ current_restaurant.receipt_note|default:''|escapejs }}",
+    logo: "{% if brand.has_logo %}{{ brand.logo_png|escapejs }}{% endif %}",
+    cashier: "{{ user.get_full_name|default:user.username|escapejs }}",
   };
 </script>
 <script src="{% static 'js/receipt.js' %}"></script>
 <script src="{% static 'js/cashier.js' %}"></script>
+<script src="{% static 'js/pos-order.js' %}"></script>
 <script>
   const cashierApp = new CashierApp();
+  const posOrder = new PosOrder(cashierApp);
 </script>
 {% endblock %}

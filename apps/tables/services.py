@@ -18,9 +18,15 @@ def open_table_session(*, table: RestaurantTable, opened_by, guest_count: int = 
     """
     with transaction.atomic():
         locked_table = RestaurantTable.objects.select_for_update().get(id=table.id)
-        
+
+        if locked_table.is_takeaway:
+            raise ValidationError("Take-away orders get their own session (create_takeaway_session).")
         if not locked_table.is_active:
             raise ValidationError("Table is not active.")
+        from .device import guest_limit
+        if guest_count > guest_limit(locked_table):
+            raise ValidationError(
+                f"{locked_table.display_name}: maximum {guest_limit(locked_table)} guests (table capacity).")
         if locked_table.status == TableStatus.MAINTENANCE:
             raise ValidationError("Table is currently under maintenance.")
             
@@ -45,7 +51,7 @@ def open_table_session(*, table: RestaurantTable, opened_by, guest_count: int = 
             req.save(update_fields=['status', 'resolved_at', 'resolved_by'])
             if not resolved_device_token and req.device_token:
                 resolved_device_token = req.device_token
-            if guest_count <= 1 and req.guest_count > 1:
+            if guest_count <= 1 and 1 < req.guest_count <= guest_limit(locked_table):
                 guest_count = req.guest_count
 
         session = TableSession.objects.create(
@@ -102,6 +108,9 @@ def request_table_activation(*, table: RestaurantTable, device_token: str = "", 
         locked_table = RestaurantTable.objects.select_for_update().get(id=table.id)
         if not locked_table.is_active:
             raise ValidationError("Meza la ativu.")
+        from .device import guest_limit
+        if guest_count > guest_limit(locked_table):
+            raise ValidationError(f"Maximum {guest_limit(locked_table)} guests for this table.")
         if locked_table.status == TableStatus.MAINTENANCE:
             raise ValidationError("Meza iha manutensaun nia laran.")
 
@@ -154,7 +163,7 @@ def request_table_activation(*, table: RestaurantTable, device_token: str = "", 
         return req
 
 
-def approve_table_activation(*, request_id: str, approved_by, request_id_header: str = "") -> TableSession:
+def approve_table_activation(*, request_id: str, approved_by, request_id_header: str = "", guest_count=None) -> TableSession:
     """
     Approves a table activation request by opening the table session and claiming the requesting device.
     """
@@ -169,6 +178,9 @@ def approve_table_activation(*, request_id: str, approved_by, request_id_header:
                 return existing_active
             raise ValidationError(f"Pedidu loke meza la válidu tanba status '{req.status}'.")
 
+        if guest_count is not None:
+            req.guest_count = guest_count
+            req.save(update_fields=['guest_count'])
         session = open_table_session(
             table=req.table,
             opened_by=approved_by,
@@ -242,57 +254,88 @@ def close_table_session(*, session: TableSession, closed_by, reason: str = "Comp
         
         return locked_session
 
-def request_bill_for_session(*, session: TableSession, request_id: str = "") -> TableSession:
+WALKOUT_REASON_MIN = 3
+
+
+def close_session_by_staff(*, session: TableSession, closed_by, mode: str = 'normal', reason: str = "",
+                           request_id: str = "") -> TableSession:
     """
-    Customer or cashier requests bill for the table session.
-    Strictly validates that table has at least one order SERVED and no pending/cooking orders.
+    The cashier's padlock button.
+
+    * normal  - only when nothing is left to pay (fully paid, or nothing billable was ordered).
+    * walkout - the guests left without paying: a reason is required, orders still waiting for the cashier
+                are cancelled, the open bill is marked WALKOUT and the remaining balance is kept as the loss.
+    Both free the table.
     """
+    from apps.ordering.models import Order, OrderStatus
+    from apps.ordering.services import cancel_order_by_staff
+    from apps.payments.models import Bill, BillStatus
+    from apps.payments.services import calculate_session_bill
+    from .models import CloseKind
+
+    mode = (mode or 'normal').strip().lower()
+    if mode not in ('normal', 'walkout'):
+        raise ValidationError("mode must be 'normal' or 'walkout'.")
+    reason = (reason or '').strip()
+
     with transaction.atomic():
-        locked_session = TableSession.objects.select_for_update().get(id=session.id)
-        if locked_session.status == SessionStatus.OPEN:
-            from apps.ordering.models import Order, OrderStatus
-            
-            # 1. Must have at least 1 order with status SERVED
-            served_orders = Order.objects.filter(
-                table_session=locked_session,
-                status=OrderStatus.SERVED
-            )
-            if not served_orders.exists():
-                raise ValidationError(
-                    "Ita-boot seidauk bele husu konta tanba seidauk iha pedidu ne'ebé entrega tiha ona ba meza (SERVED)."
-                )
+        locked = TableSession.objects.select_for_update().get(id=session.id)
+        if locked.status in (SessionStatus.CLOSED, SessionStatus.CANCELLED):
+            raise ValidationError("This session is already closed.")
+        if locked.table.is_takeaway:
+            raise ValidationError("Take-away sessions close when the order is handed over.")
 
-            # 2. Must not have orders currently being verified or cooking in kitchen
-            cooking_orders = Order.objects.filter(
-                table_session=locked_session,
-                status__in=[
-                    OrderStatus.WAITING_CASHIER_CONFIRMATION,
-                    OrderStatus.CONFIRMED,
-                    OrderStatus.PREPARING
-                ]
-            )
-            if cooking_orders.exists():
-                raise ValidationError(
-                    "Sei iha hahan ne'ebé prepara hela iha dapur. Favór hein to'o hahan hotu to'o meza molok husu konta."
-                )
+        if mode == 'normal':
+            remaining = calculate_session_bill(locked)['remaining_balance']
+            if remaining > 0:
+                err = ValidationError(f"There is still ${remaining} to pay. Take the payment, or close it as "
+                                      f"'left without paying'.")
+                err.code = 'SESSION_UNPAID'
+                raise err
+            closed = close_table_session(session=locked, closed_by=closed_by, reason=reason or "Completed",
+                                         request_id=request_id)
+            TableSession.objects.filter(id=closed.id).update(close_kind=CloseKind.NORMAL)
+            closed.close_kind = CloseKind.NORMAL
+            return closed
 
-            locked_session.status = SessionStatus.BILL_REQUESTED
-            locked_session.bill_requested_at = timezone.now()
-            locked_session.save(update_fields=['status', 'bill_requested_at', 'updated_at'])
-            
-            from apps.outbox.services import create_outbox_event
-            create_outbox_event(
-                aggregate_type='TABLE_SESSION',
-                aggregate_id=locked_session.id,
-                event_type='BILL_REQUESTED',
-                payload={
-                    'session_id': str(locked_session.id),
-                    'public_token': locked_session.public_token,
-                    'table_code': locked_session.table.table_code,
-                    'table_name': locked_session.table.display_name,
-                }
-            )
-        return locked_session
+        if len(reason) < WALKOUT_REASON_MIN:
+            err = ValidationError("Write why the table is closed without payment.")
+            err.code = 'WALKOUT_REASON_REQUIRED'
+            raise err
+        for order in Order.objects.filter(table_session=locked, status=OrderStatus.WAITING_CASHIER_CONFIRMATION):
+            cancel_order_by_staff(order=order, actor_user=closed_by, reason=f"Walkout: {reason}", request_id=request_id)
+        bill = calculate_session_bill(locked)
+        unpaid = bill['remaining_balance']
+        Bill.objects.filter(table_session=locked, status__in=[BillStatus.REQUESTED, BillStatus.REOPENED]) \
+            .update(status=BillStatus.WALKOUT, updated_at=timezone.now())
+
+        closed = close_table_session(session=locked, closed_by=closed_by, reason=reason, request_id=request_id)
+        TableSession.objects.filter(id=closed.id).update(close_kind=CloseKind.WALKOUT, unpaid_amount=unpaid)
+        closed.close_kind = CloseKind.WALKOUT
+        closed.unpaid_amount = unpaid
+
+        from apps.audit.services import log_audit_event
+        log_audit_event(
+            actor_user=closed_by,
+            actor_role=getattr(closed_by, 'role', 'CASHIER') if closed_by else 'SYSTEM',
+            action='TABLE_WALKOUT',
+            entity_type='TableSession',
+            entity_id=str(closed.id),
+            after_data={'table': closed.table.display_name, 'unpaid_amount': str(unpaid), 'reason': reason,
+                        'bill_total': str(bill['grand_total']), 'total_paid': str(bill['total_paid'])},
+            request_id=request_id,
+        )
+        return closed
+
+
+def request_bill_for_session(*, session: TableSession, requested_by=None, force: bool = False, request_id: str = "") -> TableSession:
+    """
+    Customer or cashier requests the bill for the table session (creates the Bill, see payments.billing).
+    A customer needs every item served; a cashier may pass force=True after confirming the unserved items.
+    """
+    from apps.payments.billing import request_bill
+    request_bill(session=session, requested_by=requested_by, force=force, request_id=request_id)
+    return TableSession.objects.get(id=session.id)
 
 def rotate_table_qr(*, table: RestaurantTable, actor_user, request_id: str = "") -> str:
     with transaction.atomic():

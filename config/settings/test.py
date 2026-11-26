@@ -27,3 +27,8 @@ CACHES = {
 }
 
 CELERY_TASK_ALWAYS_EAGER = True
+
+# Push is off unless a test turns it on with fake keys; when on, send inline so tests can assert it.
+VAPID_PUBLIC_KEY = ''
+VAPID_PRIVATE_KEY = ''
+PUSH_ASYNC = False

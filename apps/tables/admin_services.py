@@ -115,6 +115,8 @@ def update_table(*, table: RestaurantTable, table_code=None, display_name=None, 
                  actor_user=None, request_id="") -> RestaurantTable:
     with transaction.atomic():
         locked = RestaurantTable.objects.select_for_update().get(id=table.id)
+        if locked.is_takeaway:
+            raise ValidationError("The take-away table is managed by the system.")
         before = _snapshot(locked)
         busy = has_active_session(locked)
 
@@ -150,6 +152,8 @@ def delete_table(*, table: RestaurantTable, actor_user=None, request_id="") -> d
     """Hard-delete a table without history, otherwise deactivate it. Returns what happened."""
     with transaction.atomic():
         locked = RestaurantTable.objects.select_for_update().get(id=table.id)
+        if locked.is_takeaway:
+            raise ValidationError("The take-away table is managed by the system.")
         if has_active_session(locked):
             raise ValidationError("Meza iha sesaun ativu. Taka sesaun uluk molok hamoos.")
 

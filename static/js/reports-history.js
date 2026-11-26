@@ -16,11 +16,10 @@
     kindButtons: Array.from(document.querySelectorAll('[data-kind]')),
     status: $('rpt-h-status'),
     source: $('rpt-h-source'),
-    method: $('rpt-h-method'),
+    order_type: $('rpt-h-type'),
     cashier: $('rpt-h-cashier'),
     search: $('rpt-h-search'),
     sourceWrap: $('rpt-h-source-wrap'),
-    methodWrap: $('rpt-h-method-wrap'),
     kpi: $('rpt-h-kpi'),
     head: $('rpt-h-head'),
     body: $('rpt-h-body'),
@@ -38,7 +37,7 @@
   const ORDER_STATUSES = ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'COMPLETED', 'REJECTED', 'CANCELLED'];
   const PAYMENT_STATUSES = ['COMPLETED', 'VOIDED'];
   const SOURCES = ['CUSTOMER', 'CASHIER'];
-  const METHODS = ['CASH', 'MANUAL_OTHER'];
+  const ORDER_TYPES = ['DINE_IN', 'TAKEAWAY'];
 
   const state = {
     kind: 'orders',
@@ -68,9 +67,8 @@
     const prefix = state.kind === 'orders' ? 'rpt_status_' : 'rpt_pstatus_';
     fillSelect(ui.status, 'rpt_all_status', statuses, (s) => tr(prefix + s));
     fillSelect(ui.source, 'rpt_all_sources', SOURCES, (s) => tr('rpt_source_' + s));
-    fillSelect(ui.method, 'rpt_all_methods', METHODS, (m) => tr('rpt_method_' + m));
+    fillSelect(ui.order_type, 'rpt_all_order_types', ORDER_TYPES, (m) => tr('rpt_ot_' + m));
     ui.sourceWrap.hidden = state.kind !== 'orders';
-    ui.methodWrap.hidden = state.kind !== 'transactions';
   }
 
   function filterParams() {
@@ -78,7 +76,7 @@
     const add = (key, value) => value && params.set(key, value);
     add('status', ui.status.value);
     if (state.kind === 'orders') add('source', ui.source.value);
-    else add('method', ui.method.value);
+    add('order_type', ui.order_type.value);
     if (ui.cashier) add('cashier', ui.cashier.value);
     add('q', ui.search.value.trim());
     return params;
@@ -108,7 +106,7 @@
   }
 
   function resetFilters() {
-    ['status', 'source', 'method', 'cashier'].forEach((key) => {
+    ['status', 'source', 'order_type', 'cashier'].forEach((key) => {
       if (ui[key]) ui[key].value = '';
     });
     ui.search.value = '';
@@ -237,7 +235,10 @@
   function orderDetailHtml(d) {
     const items = d.items
       .map(
-        (i) => '<tr><td>' + esc(i.name) + (i.note ? '<div class="fs-8 text-tertiary">' + esc(i.note) + '</div>' : '') +
+        (i) => '<tr><td>' + (i.status_code === 'UNAVAILABLE' ? '<s>' + esc(i.name) + '</s>' : esc(i.name)) +
+          (i.status ? ' <span class="badge-soft' + (i.status_code === 'UNAVAILABLE' ? ' tone-danger' : (i.status_code === 'SERVED' ? ' tone-success' : '')) + '">' + esc(i.status) + '</span>' : '') +
+          (i.unavailable_reason ? '<div class="fs-8 text-tertiary">' + esc(i.unavailable_reason) + '</div>' : '') +
+          (i.note ? '<div class="fs-8 text-tertiary">' + esc(i.note) + '</div>' : '') +
           '</td><td class="text-end tabular">' + esc(i.quantity) + '</td><td class="text-end tabular">' + esc(i.subtotal) + '</td></tr>'
       )
       .join('');
@@ -392,7 +393,7 @@
     })
   );
 
-  [ui.status, ui.source, ui.method, ui.cashier].forEach((select) => select && select.addEventListener('change', reloadFromFirstPage));
+  [ui.status, ui.source, ui.order_type, ui.cashier].forEach((select) => select && select.addEventListener('change', reloadFromFirstPage));
 
   let searchTimer = null;
   ui.search.addEventListener('input', () => {

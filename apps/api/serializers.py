@@ -12,7 +12,30 @@ class RestaurantSerializer(serializers.ModelSerializer):
         model = Restaurant
         fields = ['id', 'name', 'legal_name', 'phone', 'address', 'currency', 'timezone', 'tax_percentage']
 
-class MenuItemSerializer(serializers.ModelSerializer):
+class MenuAvailabilityFieldsMixin(serializers.Serializer):
+    """Effective availability for today: `orderable`, why not (`state`) and portions left (`remaining`)."""
+    orderable = serializers.SerializerMethodField()
+    state = serializers.SerializerMethodField()
+    remaining = serializers.SerializerMethodField()
+
+    def _availability(self, obj):
+        cache = self.context.get('availability')
+        if cache is not None and str(obj.id) in cache:
+            return cache[str(obj.id)]
+        from apps.catalog.availability import menu_availability
+        return menu_availability(obj)
+
+    def get_orderable(self, obj):
+        return self._availability(obj).orderable
+
+    def get_state(self, obj):
+        return self._availability(obj).state
+
+    def get_remaining(self, obj):
+        return self._availability(obj).remaining
+
+
+class MenuItemSerializer(MenuAvailabilityFieldsMixin, serializers.ModelSerializer):
     display_image = serializers.ReadOnlyField()
     category_name = serializers.CharField(source='category.name', read_only=True)
     category_slug = serializers.CharField(source='category.slug', read_only=True)
@@ -22,7 +45,8 @@ class MenuItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'slug', 'sku', 'description', 'price',
             'display_image', 'availability', 'is_featured', 'sort_order',
-            'preparation_note', 'category_name', 'category_slug'
+            'preparation_note', 'category_name', 'category_slug',
+            'orderable', 'state', 'remaining', 'rating_avg', 'rating_count',
         ]
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -33,8 +57,9 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'description', 'icon_name', 'sort_order', 'items']
 
     def get_items(self, obj):
-        items = obj.items.filter(availability__in=['AVAILABLE', 'SOLD_OUT']).order_by('sort_order', 'name')
-        return MenuItemSerializer(items, many=True).data
+        from apps.catalog.availability import availability_map
+        items = list(obj.items.filter(availability__in=['AVAILABLE', 'SOLD_OUT']).order_by('sort_order', 'name'))
+        return MenuItemSerializer(items, many=True, context={'availability': availability_map(items)}).data
 
 class AdminCategorySerializer(serializers.ModelSerializer):
     item_count = serializers.SerializerMethodField()
@@ -56,7 +81,9 @@ class CategoryCreateUpdateSerializer(serializers.Serializer):
     sort_order = serializers.IntegerField(required=False, default=0)
     is_active = serializers.BooleanField(required=False, default=True)
 
-class AdminMenuItemSerializer(serializers.ModelSerializer):
+class AdminMenuItemSerializer(MenuAvailabilityFieldsMixin, serializers.ModelSerializer):
+    sold = serializers.SerializerMethodField()
+    closed_reason = serializers.SerializerMethodField()
     display_image = serializers.ReadOnlyField()
     category_id = serializers.UUIDField(source='category.id', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -67,8 +94,16 @@ class AdminMenuItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'slug', 'sku', 'description', 'price',
             'display_image', 'image_url', 'availability', 'is_featured', 'sort_order',
-            'preparation_note', 'category_id', 'category_name', 'category_slug', 'created_at'
+            'preparation_note', 'category_id', 'category_name', 'category_slug', 'created_at',
+            'daily_quota', 'sold', 'remaining', 'state', 'orderable', 'closed_reason',
+            'rating_avg', 'rating_count',
         ]
+
+    def get_sold(self, obj):
+        return self._availability(obj).sold
+
+    def get_closed_reason(self, obj):
+        return self._availability(obj).closed_reason
 
 class MenuItemCreateUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)
@@ -83,6 +118,7 @@ class MenuItemCreateUpdateSerializer(serializers.Serializer):
     is_featured = serializers.BooleanField(required=False, default=False)
     sort_order = serializers.IntegerField(required=False, default=0)
     preparation_note = serializers.CharField(required=False, allow_blank=True, default="")
+    daily_quota = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -153,16 +189,34 @@ class RestaurantTableSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RestaurantTable
-        fields = ['id', 'table_code', 'display_name', 'capacity', 'qr_token', 'status', 'sort_order', 'active_session', 'pending_activation']
+        fields = ['id', 'table_code', 'display_name', 'capacity', 'guest_limit', 'qr_token', 'status', 'sort_order', 'active_session', 'pending_activation']
+
+    guest_limit = serializers.SerializerMethodField()
+
+    def get_guest_limit(self, obj):
+        from apps.tables.device import guest_limit
+        return guest_limit(obj)
 
     def get_active_session(self, obj):
         from apps.tables.selectors import get_active_session_for_table
         from apps.payments.services import calculate_session_bill
+        from apps.tables.progress import session_progress
         session = get_active_session_for_table(obj)
         if not session:
             return None
         bill = calculate_session_bill(session)
+        idle_minutes = self.context.get('idle_minutes') if hasattr(self, 'context') else None
+        progress = session_progress(session, idle_minutes=idle_minutes)
         return {
+            'progress': progress['orders'],
+            'pending_items': progress['pending_items'],
+            'ready_items': progress['ready_items'],
+            'served_items': progress['served_items'],
+            'waiting_items': progress['waiting_items'],
+            'all_delivered': progress['all_delivered'],
+            'last_activity_at': progress['last_activity_at'],
+            'idle_minutes': progress['idle_minutes'],
+            'is_idle': progress['is_idle'],
             'id': str(session.id),
             'public_token': session.public_token,
             'status': session.status,
@@ -187,7 +241,6 @@ class RestaurantTableSerializer(serializers.ModelSerializer):
             return {
                 'id': str(req.id),
                 'guest_count': req.guest_count,
-                'device_token': req.device_token,
                 'requested_at': req.requested_at.isoformat(),
             }
         except Exception:
@@ -195,26 +248,41 @@ class RestaurantTableSerializer(serializers.ModelSerializer):
 
 
 class TableActivationRequestSerializer(serializers.ModelSerializer):
+    table_capacity = serializers.IntegerField(source='table.capacity', read_only=True)
     table_id = serializers.UUIDField(source='table.id', read_only=True)
     table_code = serializers.CharField(source='table.table_code', read_only=True)
     table_name = serializers.CharField(source='table.display_name', read_only=True)
+    guest_limit = serializers.SerializerMethodField()
 
     class Meta:
         from apps.tables.models import TableActivationRequest
         model = TableActivationRequest
-        fields = ['id', 'table_id', 'table_code', 'table_name', 'device_token', 'guest_count', 'status', 'requested_at']
+        fields = ['id', 'table_id', 'table_code', 'table_name', 'table_capacity', 'guest_limit', 'guest_count',
+                  'status', 'requested_at']
+
+    def get_guest_limit(self, obj):
+        from apps.tables.device import guest_limit
+        return guest_limit(obj.table)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
-        fields = ['id', 'menu_name_snapshot', 'sku_snapshot', 'unit_price', 'quantity', 'subtotal', 'note']
+        fields = [
+            'id', 'menu_name_snapshot', 'sku_snapshot', 'unit_price', 'quantity', 'subtotal', 'note',
+            'status', 'unavailable_reason', 'cooking_started_at', 'ready_at', 'served_at',
+        ]
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     table_code = serializers.CharField(source='table_session.table.table_code', read_only=True)
-    table_name = serializers.CharField(source='table_session.table.display_name', read_only=True)
+    table_name = serializers.CharField(source='table_session.label', read_only=True)
     session_token = serializers.CharField(source='table_session.public_token', read_only=True)
+    session_id = serializers.UUIDField(source='table_session.id', read_only=True)
+    session_status = serializers.CharField(source='table_session.status', read_only=True)
+    is_takeaway = serializers.BooleanField(source='table_session.is_takeaway', read_only=True)
+    takeaway_number = serializers.IntegerField(source='table_session.takeaway_number', read_only=True)
+    customer_name = serializers.CharField(source='table_session.customer_name', read_only=True)
 
     class Meta:
         model = Order
@@ -222,7 +290,8 @@ class OrderSerializer(serializers.ModelSerializer):
             'id', 'order_code', 'source', 'status', 'subtotal',
             'tax_total', 'discount_total', 'grand_total', 'customer_note',
             'rejection_reason', 'submitted_at', 'confirmed_at', 'created_at',
-            'table_code', 'table_name', 'session_token', 'items'
+            'table_code', 'table_name', 'session_token', 'items',
+            'session_id', 'session_status', 'is_takeaway', 'takeaway_number', 'customer_name',
         ]
 
 class OrderSubmitItemSerializer(serializers.Serializer):
@@ -234,6 +303,22 @@ class OrderSubmitRequestSerializer(serializers.Serializer):
     items = OrderSubmitItemSerializer(many=True)
     customer_note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
+class CashierOrderCreateSerializer(serializers.Serializer):
+    """A cashier order: `destination` TAKEAWAY (optional customer name) or TABLE (with `table_id`)."""
+    destination = serializers.ChoiceField(choices=['TAKEAWAY', 'TABLE'])
+    table_id = serializers.UUIDField(required=False)
+    customer_name = serializers.CharField(required=False, allow_blank=True, max_length=80, default='')
+    customer_note = serializers.CharField(required=False, allow_blank=True, max_length=1000, default='')
+    items = OrderSubmitItemSerializer(many=True)
+
+    def validate(self, data):
+        if data['destination'] == 'TABLE' and not data.get('table_id'):
+            raise serializers.ValidationError({'table_id': 'Required for a table order.'})
+        if not data['items']:
+            raise serializers.ValidationError({'items': 'At least one item.'})
+        return data
+
+
 class CashPaymentRequestSerializer(serializers.Serializer):
     tendered_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
-    method = serializers.ChoiceField(choices=['CASH', 'MANUAL_OTHER'], default='CASH')
+    method = serializers.ChoiceField(choices=['CASH'], default='CASH')

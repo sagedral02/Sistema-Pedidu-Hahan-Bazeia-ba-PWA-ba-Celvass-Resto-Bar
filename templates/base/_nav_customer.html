@@ -1,7 +1,7 @@
 <header class="app-topbar">
   <div class="app-topbar-inner">
     <a class="app-brand" href="{% if qr_token %}/t/{{ qr_token }}/{% else %}/{% endif %}">
-      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+      {% include 'base/_brand_mark.html' %}
       <span class="app-brand-text d-none d-sm-inline">{{ current_restaurant.name }}</span>
     </a>
     {% if table %}

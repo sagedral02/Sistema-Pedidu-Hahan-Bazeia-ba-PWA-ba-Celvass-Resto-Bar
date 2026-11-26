@@ -73,7 +73,7 @@ def table_two(db, restaurant):
         restaurant=restaurant,
         table_code="T-02",
         display_name="Meja 02",
-        capacity=2,
+        capacity=4,
         sort_order=2,
         status=TableStatus.AVAILABLE,
         is_active=True
@@ -119,3 +119,9 @@ def menu_item_corn(db, restaurant, category_main):
         price=Decimal("3.50"),
         availability=ItemAvailability.AVAILABLE
     )
+
+
+@pytest.fixture(autouse=True)
+def _shift_for_payments(request, settings):
+    """Tests that are not about shifts pay without opening one; test_shifts.py turns the rule back on."""
+    settings.REQUIRE_SHIFT_FOR_PAYMENT = 'shift_required' in request.keywords

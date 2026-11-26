@@ -5,7 +5,7 @@
  *  - Customer pages (/, /t/...): network-first, cached copy used only when offline.
  *  - Staff portals, login/logout, API and WebSocket: never cached or intercepted.
  */
-const VERSION = 'v6';
+const VERSION = 'v11';
 const STATIC_CACHE = `celvass-static-${VERSION}`;
 const PAGE_CACHE = `celvass-pages-${VERSION}`;
 const OFFLINE_URL = '/offline/';
@@ -26,6 +26,8 @@ const PRECACHE = [
   '/static/js/sound.js',
   '/static/js/websocket.js',
   '/static/js/pwa.js',
+  '/static/js/qr-scanner.js',
+  '/static/js/push.js',
   '/static/js/customer.js',
   '/static/icons/default-food.png',
   '/static/icons/icon-192.png',
@@ -99,4 +101,43 @@ self.addEventListener('fetch', (event) => {
         .catch(async () => (await caches.match(request)) || (await caches.match(OFFLINE_URL)))
     );
   }
+});
+
+// --------------------------------------------------------------------------- Web Push
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: 'Celvass', body: event.data ? event.data.text() : '' };
+  }
+  const title = data.title || 'Celvass';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: data.icon || '/pwa/icons/icon-192.png',
+      badge: data.badge || '/pwa/icons/favicon-32.png',
+      tag: data.tag || undefined,
+      renotify: Boolean(data.tag),
+      data: { url: data.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        const url = new URL(win.url);
+        if (url.pathname === target.pathname && 'focus' in win) {
+          if (target.hash && 'navigate' in win) win.navigate(target.href);
+          return win.focus();
+        }
+      }
+      return self.clients.openWindow(target.href);
+    })
+  );
 });

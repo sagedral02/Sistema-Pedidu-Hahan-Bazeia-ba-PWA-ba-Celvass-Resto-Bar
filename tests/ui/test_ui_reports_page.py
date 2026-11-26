@@ -200,16 +200,17 @@ def test_history_switches_to_transactions_and_back(page, live_server, ui_admin, 
     page.wait_for_function("() => document.querySelector('#rpt-h-head th')?.textContent.trim().toLowerCase() === 'time'")
     page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 2")
     assert page.url.endswith('#history/transactions')
-    assert page.locator('#rpt-h-method-wrap').is_visible()
+    assert page.locator('#rpt-h-type-wrap').is_visible()
     assert page.locator('#rpt-h-source-wrap').is_hidden()
 
-    page.select_option('#rpt-h-method', 'MANUAL_OTHER')
-    page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 1")
-    assert '$30.00' in page.locator('#rpt-h-body').inner_text()
+    page.select_option('#rpt-h-type', 'TAKEAWAY')
+    page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 0")
+    page.select_option('#rpt-h-type', 'DINE_IN')
+    page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 2")
 
     page.locator('[data-kind="orders"]').click()
     page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 2")
-    assert page.locator('#rpt-h-method').input_value() == ''
+    assert page.locator('#rpt-h-type').input_value() == ''
 
 
 def test_history_sorting_and_pagination(page, live_server, ui_admin, restaurant, active_session):
@@ -310,7 +311,7 @@ def test_cashier_sees_only_their_history_and_no_cashier_filter(page, live_server
     assert page.locator('#rpt-h-status option[value="WAITING_CASHIER_CONFIRMATION"]').count() == 0
 
 
-def test_cashier_navigation_points_istoriku_to_the_history_tab(page, live_server, cashier_user, history_data):
+def test_cashier_reaches_history_through_the_reports_tab(page, live_server, cashier_user, history_data):
     _login(page, live_server, cashier_user)
     page.add_init_script("localStorage.setItem('celvas_lang', 'en')")
     page.goto(f'{live_server.url}/cashier/')
@@ -318,20 +319,16 @@ def test_cashier_navigation_points_istoriku_to_the_history_tab(page, live_server
     # The portal polls several endpoints on load; leaving mid-flight can trip the in-memory SQLite test database.
     page.wait_for_load_state('networkidle')
 
-    link = page.locator('.app-nav-link[data-nav="history"]')
-    assert link.get_attribute('href') == '/reports/#history'
-    assert link.inner_text().strip() == 'History'
+    # Five menus: POS, Service desk, Menu & Stock, Shift, Reports. History is a tab inside Reports.
+    assert page.locator('.app-nav-link[data-nav="history"]').count() == 0
+    assert page.locator('.app-nav .app-nav-link').count() == 5
     assert page.locator('#orders-history-panel').count() == 0
-
-    link.click()
-    page.wait_for_url('**/reports/#history/orders')
-    page.wait_for_selector('#rpt-h-body tr[data-id]')
-    assert page.locator('.app-nav-link[data-nav="history"]').get_attribute('class').split().count('is-active') == 1
-    assert 'is-active' not in page.locator('.app-nav-link[data-nav="reports"]').get_attribute('class')
 
     page.locator('.app-nav-link[data-nav="reports"]').click()
     page.wait_for_selector('#rpt-pane-summary:not([hidden])')
-    assert page.url.endswith('#summary')
+    page.locator('#rpt-tab-history').click()
+    page.wait_for_selector('#rpt-h-body tr[data-id]')
+    assert page.locator('#rpt-tab-audit').count() == 0
 
 
 def test_old_history_bookmark_is_redirected(page, live_server, cashier_user, history_data):

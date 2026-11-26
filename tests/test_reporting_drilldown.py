@@ -30,8 +30,9 @@ def data(restaurant, active_session, session_two, cashier_user, cashier_two, adm
     yesterday = today - timedelta(days=1)
     make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=yesterday)
     make_payment(restaurant, active_session, cashier_user, '5.00', paid_day=today, hour=9)
-    make_payment(restaurant, session_two, cashier_two, '30.00', paid_day=today, hour=10,
-                 method=PaymentMethod.MANUAL_OTHER)
+    from apps.tables.takeaway import create_takeaway_session
+    takeaway = create_takeaway_session(restaurant=restaurant, opened_by=cashier_two)
+    make_payment(restaurant, takeaway, cashier_two, '30.00', paid_day=today, hour=10)
     make_payment(restaurant, session_two, cashier_two, '7.00', paid_day=today, hour=11,
                  status=PaymentStatus.VOIDED, void_reason='Salah input', voided_by=admin_user)
     order = make_order(restaurant, active_session, OrderStatus.COMPLETED, '12.00', day=today, confirmed_by=cashier_user)
@@ -62,12 +63,12 @@ def test_daily_sales_rows_open_that_days_completed_transactions(admin_user, data
 
 
 @pytest.mark.django_db
-def test_payment_method_rows_open_transactions_of_that_method(admin_user, data):
+def test_order_type_rows_open_transactions_of_that_type(admin_user, data):
     client = login(admin_user)
-    body = drills(client, 'payment_methods')
-    by_method = {d['method']: (row, d) for row, d in zip(body['rows'], body['drills'])}
-    row, drill = by_method['MANUAL_OTHER']
-    listed = client.get(TRANSACTIONS, {'preset': '7days', 'method': drill['method'], 'status': drill['status']}).json()
+    body = drills(client, 'order_types')
+    by_type = {d['order_type']: (row, d) for row, d in zip(body['rows'], body['drills'])}
+    row, drill = by_type['TAKEAWAY']
+    listed = client.get(TRANSACTIONS, {'preset': '7days', 'order_type': drill['order_type'], 'status': drill['status']}).json()
     assert listed['total'] == 1 and listed['rows'][0]['amount'] == '$30.00'
 
 

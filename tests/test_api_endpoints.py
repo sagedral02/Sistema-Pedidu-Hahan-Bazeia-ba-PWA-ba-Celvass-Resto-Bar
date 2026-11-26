@@ -169,7 +169,9 @@ def test_cashier_orders_and_bills_history_endpoints(active_session, menu_item_fi
     assert len(orders_data) >= 1
     assert any(o['order_code'] == order.order_code for o in orders_data)
 
-    # 2. Pay Bill (Payment Completed -> session closed and table freed)
+    # 2. Pay Bill (only through a requested bill)
+    from apps.payments.billing import request_bill
+    request_bill(session=active_session, requested_by=cashier_user, force=True)
     payment = record_cash_payment(
         session=active_session,
         cashier_user=cashier_user,

@@ -1,0 +1,40 @@
+{% load static %}{% if readonly %}<article class="menu-card is-readonly{% if not item.eff.orderable %} is-unavailable{% endif %}" aria-label="{{ item.name }}">{% else %}<button type="button"
+        class="menu-card{% if not item.eff.orderable %} is-unavailable{% endif %}"
+        data-item-id="{{ item.id }}"
+        data-item-name="{{ item.name }}"
+        data-item-price="{{ item.price }}"
+        data-item-image="{{ item.display_image }}"
+        data-item-desc="{{ item.description|default:'' }}"
+        data-available="{% if item.eff.orderable %}1{% else %}0{% endif %}"
+        data-remaining="{% if item.eff.remaining is not None %}{{ item.eff.remaining }}{% endif %}"
+        aria-disabled="{% if item.eff.orderable %}false{% else %}true{% endif %}">{% endif %}
+  <span class="menu-card-media">
+    <img src="{{ item.display_image }}" alt="" loading="lazy" decoding="async" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
+    {% if not item.eff.orderable %}
+      <span class="menu-card-flag tone-danger" data-role="flag" data-i18n="sold_out">Hotu</span>
+    {% elif item.eff.remaining is not None %}
+      <span class="menu-card-flag tone-warning" data-role="flag"><span data-i18n="cust_stock_left">Sobra</span> {{ item.eff.remaining }}</span>
+    {% elif item.is_featured %}
+      <span class="menu-card-flag" data-i18n="chefs_special">Rekomenda</span>
+    {% endif %}
+  </span>
+  <span class="menu-card-body">
+    <span class="menu-card-cat">{{ cat_name }}</span>
+    <span class="menu-card-title">{{ item.name }}</span>
+    {% if item.rating_count %}
+      <span class="menu-card-rating" aria-label="{{ item.rating_avg|floatformat:1 }} / 5"><i class="fa-solid fa-star" aria-hidden="true"></i>{{ item.rating_avg|floatformat:1 }} <span class="text-tertiary">({{ item.rating_count }})</span></span>
+    {% endif %}
+    {% if item.description and not compact %}<span class="menu-card-desc">{{ item.description }}</span>{% endif %}
+    {% if item.ordered_count %}<span class="menu-card-desc"><i class="fa-solid fa-fire-flame-curved me-1" aria-hidden="true"></i>{{ item.ordered_count }}&times; <span data-i18n="cust_hl_ordered_times">pedidu</span></span>{% endif %}
+    <span class="menu-card-foot">
+      <span class="price">${{ item.price }}</span>
+      {% if item.eff.orderable and not readonly %}
+        {% if session and session.is_active %}
+          <span class="menu-card-add" aria-hidden="true"><i class="fa-solid fa-plus"></i></span>
+        {% else %}
+          <span class="menu-card-add is-locked" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
+        {% endif %}
+      {% endif %}
+    </span>
+  </span>
+{% if readonly %}</article>{% else %}</button>{% endif %}

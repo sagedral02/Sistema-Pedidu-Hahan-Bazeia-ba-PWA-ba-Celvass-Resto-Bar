@@ -10,7 +10,7 @@ from apps.ordering.models import OrderStatus
 from apps.payments.models import PaymentMethod, PaymentStatus
 from apps.reporting.reports import (
     Label, Period, ReportError, build_report, cashiers_report, daily_sales_report, exceptions_report,
-    menu_sales_report, parse_period, payment_methods_report, table_usage_report,
+    menu_sales_report, order_types_report, parse_period, table_usage_report,
 )
 from reporting_helpers import add_item, make_history, make_order, make_payment
 
@@ -162,25 +162,29 @@ def test_menu_sales_item_without_menu_link_is_uncategorized(restaurant, active_s
     assert report.rows == [[Label('rpt_uncategorized'), 'Menu Lama', 2, Decimal('2.00')]]
 
 
-# ----------------------------------------------------------------------------- payment methods
+# ----------------------------------------------------------------------------- order types
 
-def test_payment_methods_percentages_add_up_to_100(restaurant, active_session, cashier_user, today, period_today):
-    make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today, method=PaymentMethod.CASH)
-    make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today, method=PaymentMethod.CASH)
+def test_order_types_split_dine_in_and_take_away(restaurant, active_session, session_two, cashier_user, today, period_today):
+    session_two.table.is_takeaway = True
+    session_two.table.save()
+    make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today)
+    make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today)
+    make_payment(restaurant, session_two, cashier_user, '10.00', paid_day=today)
+    # an old non-cash payment still counts as a sale
     make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today, method=PaymentMethod.MANUAL_OTHER)
 
-    report = payment_methods_report(period_today)
+    report = order_types_report(period_today)
 
     rows = {r[0].key: r for r in report.rows}
-    assert rows['rpt_method_CASH'][1:3] == [2, Decimal('20.00')]
-    assert rows['rpt_method_MANUAL_OTHER'][1:3] == [1, Decimal('10.00')]
+    assert rows['rpt_ot_DINE_IN'][1:3] == [3, Decimal('30.00')]
+    assert rows['rpt_ot_TAKEAWAY'][1:3] == [1, Decimal('10.00')]
     assert sum(r[3] for r in report.rows) == Decimal('100.0')
-    assert {s.label_key: s.value for s in report.summary}['rpt_sum_total_sales'] == Decimal('30.00')
+    assert {s.label_key: s.value for s in report.summary}['rpt_sum_total_sales'] == Decimal('40.00')
 
 
-def test_payment_methods_with_no_sales_lists_both_methods_at_zero(db, period_today):
-    report = payment_methods_report(period_today)
-    assert [r[0].key for r in report.rows] == ['rpt_method_CASH', 'rpt_method_MANUAL_OTHER']
+def test_order_types_with_no_sales_lists_both_types_at_zero(db, period_today):
+    report = order_types_report(period_today)
+    assert [r[0].key for r in report.rows] == ['rpt_ot_DINE_IN', 'rpt_ot_TAKEAWAY']
     assert all(r[1] == 0 and r[2] == Decimal('0.00') and r[3] == Decimal('0.0') for r in report.rows)
 
 
@@ -233,7 +237,8 @@ def test_exceptions_admin_sees_all_kinds(exception_data, admin_user, period_toda
     kinds = sorted(r[1].key for r in report.rows)
     assert kinds == ['rpt_kind_cancelled', 'rpt_kind_rejected', 'rpt_kind_voided']
     values = {s.label_key: s.value for s in report.summary}
-    assert values == {'rpt_sum_rejected': 1, 'rpt_sum_cancelled': 1, 'rpt_sum_voided': 1}
+    assert values == {'rpt_sum_rejected': 1, 'rpt_sum_cancelled': 1, 'rpt_sum_voided': 1, 'rpt_sum_unavailable': 0,
+                      'rpt_sum_walkout': 0, 'rpt_sum_walkout_amount': Decimal('0.00')}
 
     rejected_row = next(r for r in report.rows if r[1].key == 'rpt_kind_rejected')
     assert rejected_row[3] == 'Meja 01'

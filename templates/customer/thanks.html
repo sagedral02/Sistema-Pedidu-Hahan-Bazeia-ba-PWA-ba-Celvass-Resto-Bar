@@ -1,0 +1,84 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}{{ current_restaurant.name }}{% endblock %}
+{% block role %}customer{% endblock %}
+{% block main_class %}is-narrow{% endblock %}
+
+{% block topbar %}{% include 'base/_nav_customer.html' %}{% endblock %}
+
+{% block content %}
+  <section class="thanks-hero mb-3" aria-labelledby="thanks-title">
+    <div class="thanks-hero-icon" aria-hidden="true"><i class="fa-solid fa-circle-check"></i></div>
+    <h1 class="page-title" id="thanks-title" data-i18n="thx_title">Obrigadu barak!</h1>
+    <p class="page-subtitle mb-0"><span data-i18n="thx_subtitle">Pagamentu remata ona.</span> {{ session.label }}</p>
+  </section>
+
+  <div class="callout tone-info mb-3" id="thanks-countdown-box" role="status">
+    <i class="fa-solid fa-house" aria-hidden="true"></i>
+    <div class="flex-grow-1">
+      <div><span data-i18n="thx_redirect">Ba pájina prinsipál iha</span> <strong class="tabular" id="thanks-countdown">{{ countdown }}</strong> <span data-i18n="thx_seconds">segundu</span></div>
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        <a class="btn btn-sm btn-primary" href="{{ home_url }}" id="thanks-home"><span data-i18n="thx_go_home">Ba pájina prinsipál</span></a>
+        <button type="button" class="btn btn-sm btn-secondary-app" id="thanks-stay" onclick="Thanks.pause()"><span data-i18n="thx_stay">Hela iha ne'e</span></button>
+        <button type="button" class="btn btn-sm btn-secondary-app" data-qr-scan onclick="Thanks.pause()"><i class="fa-solid fa-camera" aria-hidden="true"></i><span data-i18n="qr_scan_btn">Skanu QR meza</span></button>
+      </div>
+    </div>
+  </div>
+
+  {% if ratings %}
+  <section class="surface surface-pad mb-3" aria-labelledby="rate-title">
+    <h2 class="section-title mb-1" id="rate-title" data-i18n="thx_rate_title">Fó rating ba hahan</h2>
+    <p class="fs-7 text-tertiary mb-3" data-i18n="thx_rate_desc">Ita-nia opiniaun ajuda kliente seluk hili.</p>
+    <div class="rate-list" id="rate-list">
+      {% for r in ratings %}
+        <div class="rate-item" data-menu-item="{{ r.menu_item_id }}" data-stars="{{ r.stars|default:'' }}">
+          <img src="{{ r.image }}" alt="" class="thumb" loading="lazy" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
+          <div class="min-w-0 flex-grow-1">
+            <div class="fw-bold truncate">{{ r.name }}</div>
+            <div class="rate-stars" role="radiogroup" aria-label="{{ r.name }}">
+              {% for n in '12345' %}
+                <button type="button" class="rate-star" role="radio" data-value="{{ n }}" aria-checked="false" aria-label="{{ n }} / 5"><i class="fa-solid fa-star" aria-hidden="true"></i></button>
+              {% endfor %}
+            </div>
+            <input type="text" class="form-control form-control-sm mt-2" maxlength="300" value="{{ r.comment }}" placeholder="Komentáriu (opsionál)" data-i18n-placeholder="thx_comment" aria-label="Komentáriu">
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn btn-primary w-100 mt-3" id="rate-submit" onclick="Thanks.submit()"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span data-i18n="thx_rate_submit">Haruka rating</span></button>
+  </section>
+  {% endif %}
+
+  <section class="surface surface-pad mb-3" aria-labelledby="sum-title">
+    <h2 class="section-title mb-2" id="sum-title" data-i18n="thx_summary">Rezumu</h2>
+    {% for item in bill.items %}
+      <div class="cart-line">
+        <div class="cart-line-info"><div class="cart-line-name">{{ item.quantity }}&times; {{ item.name }}</div></div>
+        <span class="price">${{ item.subtotal }}</span>
+      </div>
+    {% endfor %}
+    <div class="d-flex justify-content-between align-items-center pt-3 mt-1 border-top">
+      <span class="fw-bold" data-i18n="grand_total">Totál</span>
+      <span class="price fs-5">${{ bill.grand_total }}</span>
+    </div>
+    {% if payment %}
+      <div class="d-flex justify-content-between fs-7 text-secondary-app mt-2"><span data-i18n="tendered_label">Osan simu</span><span class="tabular">${{ payment.tendered_amount }}</span></div>
+      <div class="d-flex justify-content-between fs-7 text-secondary-app"><span data-i18n="change_label">Troku</span><span class="tabular">${{ payment.change_amount }}</span></div>
+      <div class="fs-8 text-tertiary mt-1">{{ payment.payment_code }}</div>
+    {% endif %}
+  </section>
+
+  {% include 'customer/_contact.html' %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/thanks.js' %}"></script>
+<script>
+  Thanks.init({
+    ratingsUrl: "{% url 'api-public-ratings' session.public_token %}",
+    homeUrl: "{{ home_url|escapejs }}",
+    countdown: {{ countdown }},
+  });
+</script>
+{% endblock %}

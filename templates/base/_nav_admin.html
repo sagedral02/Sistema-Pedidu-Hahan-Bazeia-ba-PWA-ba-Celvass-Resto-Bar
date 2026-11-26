@@ -1,7 +1,7 @@
 <header class="app-topbar">
   <div class="app-topbar-inner">
     <a class="app-brand" href="{% url 'admin-portal' %}">
-      <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+      {% include 'base/_brand_mark.html' %}
       <span class="min-w-0">
         <span class="app-brand-text d-block">{{ current_restaurant.name }}</span>
         <span class="app-brand-sub" data-i18n="role_admin_portal">Admin</span>
@@ -9,12 +9,11 @@
     </a>
     <nav class="app-nav" aria-label="Navegasaun admin">
       <button type="button" class="app-nav-link" data-panel="overview-panel"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span data-i18n="nav_overview">Rezumu</span></button>
-      <button type="button" class="app-nav-link" data-panel="menu-panel"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><span data-i18n="menu_stock">Menu &amp; Stok</span></button>
-      <button type="button" class="app-nav-link" data-panel="categories-panel"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span data-i18n="categories_nav">Kategoria</span></button>
+      <button type="button" class="app-nav-link" data-panel="menu-panel" data-panel-group="menu-panel categories-panel"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span data-i18n="nav_catalog">Katálogu</span></button>
       <button type="button" class="app-nav-link" data-panel="tables-panel"><i class="fa-solid fa-qrcode" aria-hidden="true"></i><span data-i18n="tables_qr">Meza &amp; QR</span></button>
       <button type="button" class="app-nav-link" data-panel="users-panel"><i class="fa-solid fa-users" aria-hidden="true"></i><span data-i18n="staff_users">Staff</span></button>
+      <button type="button" class="app-nav-link" data-panel="settings-panel"><i class="fa-solid fa-store" aria-hidden="true"></i><span data-i18n="set_nav">Konfigurasaun</span></button>
       <a class="app-nav-link{% if reports_page %} is-active{% endif %}" href="{% url 'reports' %}" data-nav="reports" aria-current="{% if reports_page %}page{% else %}false{% endif %}"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span data-i18n="reports">Relatóriu</span></a>
-      <button type="button" class="app-nav-link" data-panel="audit-panel"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span data-i18n="audit_logs">Auditoria</span></button>
     </nav>
     <div class="app-topbar-actions">
       {% include 'base/_account_menu.html' %}

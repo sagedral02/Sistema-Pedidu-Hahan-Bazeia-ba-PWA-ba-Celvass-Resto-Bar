@@ -30,7 +30,9 @@ class RestaurantTable(models.Model):
     status = models.CharField(max_length=20, choices=TableStatus.choices, default=TableStatus.AVAILABLE, db_index=True)
     sort_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True, db_index=True)
-    
+    # Hidden virtual table that carries every take-away order (never listed, never has a QR page).
+    is_takeaway = models.BooleanField(default=False, db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -77,7 +79,16 @@ class TableSession(models.Model):
     closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='closed_sessions')
     closed_at = models.DateTimeField(null=True, blank=True)
     close_reason = models.TextField(null=True, blank=True)
-    
+    # NORMAL = settled and closed; WALKOUT = the guests left without paying (unpaid_amount is the loss).
+    close_kind = models.CharField(max_length=10, blank=True, default="")
+    unpaid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Idle alert already raised for this session (so the cashier is notified once).
+    idle_alerted_at = models.DateTimeField(null=True, blank=True)
+    # Take away only: daily queue number (TA-001) and the optional name the customer gave.
+    takeaway_number = models.PositiveIntegerField(null=True, blank=True)
+    takeaway_date = models.DateField(null=True, blank=True)
+    customer_name = models.CharField(max_length=80, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,6 +105,18 @@ class TableSession(models.Model):
         return f"Session {self.public_token[:8]} - {self.table.display_name} ({self.status})"
 
     @property
+    def is_takeaway(self):
+        return bool(self.takeaway_number) or self.table.is_takeaway
+
+    @property
+    def label(self):
+        """Short name for lists and receipts: the table name, or "Take away #012 - Budi"."""
+        if not self.is_takeaway:
+            return self.table.display_name
+        base = f"Take away #{(self.takeaway_number or 0):03d}"
+        return f"{base} - {self.customer_name}" if self.customer_name else base
+
+    @property
     def is_active(self):
         return self.status in [
             SessionStatus.OPEN,
@@ -101,6 +124,11 @@ class TableSession(models.Model):
             SessionStatus.PAYMENT_PENDING,
             SessionStatus.PAID
         ]
+
+
+class CloseKind(models.TextChoices):
+    NORMAL = 'NORMAL', 'Normal'
+    WALKOUT = 'WALKOUT', 'Left without paying'
 
 
 class ActivationRequestStatus(models.TextChoices):

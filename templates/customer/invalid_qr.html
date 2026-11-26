@@ -9,7 +9,7 @@
   <div class="standalone-card">
     <div class="standalone-top">
       <span class="app-brand">
-        <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+        {% include 'base/_brand_mark.html' %}
         <span class="app-brand-text">{{ current_restaurant.name }}</span>
       </span>
       {% include 'base/_lang_menu.html' %}
@@ -19,7 +19,10 @@
     <h1 class="standalone-title" data-i18n="invalid_qr_title">QR Code la válidu</h1>
     <p class="standalone-text" data-i18n="invalid_qr_desc">QR Code ne'e la rekoñese ka meza seidauk ativu. Skanu fali QR Code iha ita-nia meza, ka husu tulun ba staff.</p>
 
-    <a class="btn btn-primary w-100" href="/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span data-i18n="btn_back_home">Fila ba pájina prinsipál</span></a>
+    <div class="d-grid gap-2">
+      <button type="button" class="btn btn-primary" data-qr-scan><i class="fa-solid fa-camera" aria-hidden="true"></i><span data-i18n="qr_scan_btn">Skanu QR meza</span></button>
+      <a class="btn btn-secondary-app" href="/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span data-i18n="btn_back_home">Fila ba pájina prinsipál</span></a>
+    </div>
 
     <div class="standalone-footer">
       <span>{{ current_restaurant.address|default:"Praia dos Coqueiros, Dili" }}</span>

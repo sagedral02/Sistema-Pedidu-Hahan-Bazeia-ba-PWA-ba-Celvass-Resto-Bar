@@ -7,6 +7,21 @@ from .models import Category, MenuItem, ItemAvailability
 from apps.restaurants.models import Restaurant
 from apps.audit.services import log_audit_event
 
+_UNSET = object()
+
+
+def clean_quota(value):
+    """None / blank = no limit, otherwise a whole number of portions of 1 or more."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError("Daily quota must be a whole number.")
+    if number < 1:
+        raise ValidationError("Daily quota must be 1 or more.")
+    return number
+
 
 def generate_unique_category_slug(restaurant: Restaurant, base_name: str, current_id=None) -> str:
     base_slug = slugify(base_name) or "kategoria"
@@ -198,12 +213,14 @@ def create_menu_item(
     is_featured: bool = False,
     sort_order: int = 0,
     preparation_note: str = "",
+    daily_quota=None,
     actor_user=None,
     request_id: str = ""
 ) -> MenuItem:
     name = (name or "").strip()
     if not name:
         raise ValidationError("Naran menu obrigatóriu atu preenxe.")
+    daily_quota = clean_quota(daily_quota)
 
     price_dec = Decimal(str(price)).quantize(Decimal('0.01'))
     if price_dec < Decimal('0.00'):
@@ -230,7 +247,8 @@ def create_menu_item(
             availability=availability or ItemAvailability.AVAILABLE,
             is_featured=bool(is_featured),
             sort_order=int(sort_order or 0),
-            preparation_note=preparation_note.strip() if preparation_note else ""
+            preparation_note=preparation_note.strip() if preparation_note else "",
+            daily_quota=daily_quota,
         )
 
         log_audit_event(
@@ -243,7 +261,8 @@ def create_menu_item(
                 'name': item.name,
                 'category': category.name,
                 'price': str(item.price),
-                'availability': item.availability
+                'availability': item.availability,
+                'daily_quota': item.daily_quota,
             },
             request_id=request_id
         )
@@ -266,9 +285,11 @@ def update_menu_item(
     is_featured: bool = None,
     sort_order: int = None,
     preparation_note: str = None,
+    daily_quota=_UNSET,
     actor_user=None,
     request_id: str = ""
 ) -> MenuItem:
+    quota_value = _UNSET if daily_quota is _UNSET else clean_quota(daily_quota)
     with transaction.atomic():
         locked_item = MenuItem.objects.select_for_update().get(id=item.id)
         before_data = {
@@ -276,7 +297,8 @@ def update_menu_item(
             'category_id': str(locked_item.category_id),
             'price': str(locked_item.price),
             'availability': locked_item.availability,
-            'is_featured': locked_item.is_featured
+            'is_featured': locked_item.is_featured,
+            'daily_quota': locked_item.daily_quota,
         }
 
         update_fields = ['updated_at']
@@ -340,6 +362,10 @@ def update_menu_item(
             locked_item.preparation_note = preparation_note.strip()
             update_fields.append('preparation_note')
 
+        if quota_value is not _UNSET:
+            locked_item.daily_quota = quota_value
+            update_fields.append('daily_quota')
+
         locked_item.save(update_fields=update_fields)
 
         log_audit_event(
@@ -354,7 +380,8 @@ def update_menu_item(
                 'category_id': str(locked_item.category_id),
                 'price': str(locked_item.price),
                 'availability': locked_item.availability,
-                'is_featured': locked_item.is_featured
+                'is_featured': locked_item.is_featured,
+                'daily_quota': locked_item.daily_quota,
             },
             request_id=request_id
         )

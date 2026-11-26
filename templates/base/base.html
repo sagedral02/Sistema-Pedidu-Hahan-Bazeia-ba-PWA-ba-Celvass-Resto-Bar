@@ -11,9 +11,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Celvass">
-  <link rel="icon" href="{% static 'icons/favicon.ico' %}">
-  <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
+  <meta name="apple-mobile-web-app-title" content="{{ current_restaurant.app_short_name }}">
+  <link rel="icon" href="{{ brand.favicon_ico }}" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ brand.favicon_32_png }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ brand.icon_192_png }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ brand.apple_touch_icon_png }}">
 
   <link rel="preload" href="{% static 'vendor/fonts/plus-jakarta-sans-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{% static 'vendor/fonts/plus-jakarta-sans.css' %}">
@@ -22,7 +24,7 @@
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
   {% block extra_css %}{% endblock %}
 </head>
-<body data-role="{% block role %}customer{% endblock %}" data-default-panel="{% block default_panel %}{% endblock %}" data-panel-home="{% block panel_home %}{% endblock %}" class="{% block body_class %}{% endblock %}">
+<body data-role="{% block role %}customer{% endblock %}" data-default-panel="{% block default_panel %}{% endblock %}" data-panel-home="{% block panel_home %}{% endblock %}" data-panel-redirects="{% block panel_redirects %}{% endblock %}" class="{% block body_class %}{% endblock %}">
   {% csrf_token %}
   <a class="visually-hidden-focusable btn btn-primary position-absolute m-2" style="z-index:2000" href="#main">Ba konteúdu</a>
 
@@ -30,7 +32,7 @@
     <header class="app-topbar">
       <div class="app-topbar-inner">
         <a class="app-brand" href="/">
-          <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+          {% include 'base/_brand_mark.html' %}
           <span class="app-brand-text">{{ current_restaurant.name }}</span>
         </a>
         <div class="app-topbar-actions">
@@ -41,7 +43,7 @@
   {% endblock %}
 
   <div id="pwa-install-banner" class="install-banner" role="region" aria-label="Instala aplikasaun">
-    <img src="{% static 'icons/icon-192.png' %}" width="32" height="32" alt="">
+    <img src="{{ brand.icon_192_png }}" width="32" height="32" alt="">
     <div class="install-banner-text">
       <strong data-i18n="install_pwa_text">Instala aplikasaun Celvass</strong>
       <div class="text-tertiary fs-7 d-none d-sm-block" data-i18n="install_pwa_desc">Loke lais husi ekran prinsipál.</div>
@@ -66,6 +68,8 @@
   <script src="{% static 'js/sound.js' %}"></script>
   <script src="{% static 'js/websocket.js' %}"></script>
   <script src="{% static 'js/pwa.js' %}"></script>
+  <script src="{% static 'js/qr-scanner.js' %}"></script>
+  <script src="{% static 'js/push.js' %}"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -137,7 +137,7 @@ def test_error_message_follows_language(admin_user, restaurant):
 def test_every_report_type_renders_for_every_language(admin_user, restaurant, active_session, cashier_user, today):
     make_payment(restaurant, active_session, cashier_user, '3.00', paid_day=today)
     client = login(admin_user)
-    for report_type in ('daily_sales', 'menu_sales', 'payment_methods', 'cashiers', 'exceptions', 'table_usage'):
+    for report_type in ('daily_sales', 'menu_sales', 'order_types', 'cashiers', 'exceptions', 'table_usage', 'visitors'):
         for lang in ('tet', 'pt', 'en', 'id'):
             res = client.get(DATA, {'type': report_type, 'lang': lang})
             assert res.status_code == 200, (report_type, lang)

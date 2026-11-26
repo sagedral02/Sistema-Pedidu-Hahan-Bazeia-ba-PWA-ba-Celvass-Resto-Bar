@@ -9,7 +9,7 @@ ACTIVE_SESSION_STATUSES = [
 ]
 
 def get_table_by_qr_token(qr_token: str) -> Optional[RestaurantTable]:
-    return RestaurantTable.objects.filter(qr_token=qr_token, is_active=True).first()
+    return RestaurantTable.objects.filter(qr_token=qr_token, is_active=True, is_takeaway=False).first()
 
 def get_active_session_for_table(table: RestaurantTable) -> Optional[TableSession]:
     return TableSession.objects.filter(
@@ -24,13 +24,13 @@ def get_session_by_public_token(public_token: str) -> Optional[TableSession]:
     ).select_related('table', 'restaurant').first()
 
 def list_tables_with_status():
-    return RestaurantTable.objects.filter(is_active=True).prefetch_related(
+    return RestaurantTable.objects.filter(is_active=True, is_takeaway=False).prefetch_related(
         'sessions', 'activation_requests'
     ).order_by('sort_order', 'table_code')
 
 def list_all_tables_for_admin():
     """All tables including inactive ones, for the admin table manager."""
-    return RestaurantTable.objects.all().prefetch_related('sessions').order_by('-is_active', 'sort_order', 'table_code')
+    return RestaurantTable.objects.filter(is_takeaway=False).prefetch_related('sessions').order_by('-is_active', 'sort_order', 'table_code')
 
 def get_pending_activation_requests_for_restaurant(restaurant=None) -> List[TableActivationRequest]:
     try:

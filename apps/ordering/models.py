@@ -19,6 +19,14 @@ class OrderStatus(models.TextChoices):
     REJECTED = 'REJECTED', 'Rejected by Cashier'
     CANCELLED = 'CANCELLED', 'Cancelled'
 
+class ItemStatus(models.TextChoices):
+    """Kitchen lifecycle of a single order line. The order status is derived from these (see items.py)."""
+    QUEUED = 'QUEUED', 'Queued'
+    COOKING = 'COOKING', 'Cooking'
+    READY = 'READY', 'Ready'
+    SERVED = 'SERVED', 'Served'
+    UNAVAILABLE = 'UNAVAILABLE', 'Unavailable (out of stock)'
+
 class ActorType(models.TextChoices):
     CUSTOMER = 'CUSTOMER', 'Customer'
     STAFF = 'STAFF', 'Staff'
@@ -79,7 +87,17 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(99)])
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
     note = models.CharField(max_length=500, blank=True, null=True)
-    
+
+    status = models.CharField(max_length=20, choices=ItemStatus.choices, default=ItemStatus.QUEUED, db_index=True)
+    cooking_started_at = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    served_at = models.DateTimeField(null=True, blank=True)
+    unavailable_reason = models.CharField(max_length=255, blank=True, default="")
+    status_changed_at = models.DateTimeField(null=True, blank=True)
+    status_changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

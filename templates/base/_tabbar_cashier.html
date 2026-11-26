@@ -1,8 +1,7 @@
 <nav class="app-tabbar" aria-label="Navegasaun kaixa">
-  <button type="button" class="app-tab" data-panel="pos-panel" data-view="queue"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="label" data-i18n="nav_queue">Fila</span><span class="nav-count" data-count-for="pending"></span></button>
-  <button type="button" class="app-tab" data-panel="pos-panel" data-view="tables"><i class="fa-solid fa-chair" aria-hidden="true"></i><span class="label" data-i18n="nav_tables">Meza</span></button>
-  <button type="button" class="app-tab" data-panel="bill-alerts-panel"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span class="label" data-i18n="nav_bills">Konta</span><span class="nav-count" data-count-for="bills"></span></button>
-  <a class="app-tab" href="{% url 'reports' %}#history" data-nav="history"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span class="label" data-i18n="order_history">Istóriku</span></a>
-  <button type="button" class="app-tab" data-panel="shift-close-panel"><i class="fa-solid fa-vault" aria-hidden="true"></i><span class="label" data-i18n="nav_shift">Fechu</span></button>
+  <button type="button" class="app-tab" data-panel="pos-panel"><i class="fa-solid fa-cash-register" aria-hidden="true"></i><span class="label" data-i18n="csh_nav_pos">POS</span><span class="nav-count" data-count-for="pending"></span></button>
+  <button type="button" class="app-tab" data-panel="service-panel"><i class="fa-solid fa-bell-concierge" aria-hidden="true"></i><span class="label" data-i18n="csh_nav_service">Atendimentu</span><span class="nav-count" data-count-for="service"></span></button>
+  <button type="button" class="app-tab" data-panel="stock-panel"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span class="label" data-i18n="csh_nav_stock">Menu &amp; Stok</span></button>
+  <button type="button" class="app-tab" data-panel="shift-panel"><i class="fa-solid fa-vault" aria-hidden="true"></i><span class="label" data-i18n="csh_nav_shift">Turnu</span></button>
   <a class="app-tab{% if reports_page %} is-active{% endif %}" href="{% url 'reports' %}" data-nav="reports" aria-current="{% if reports_page %}page{% else %}false{% endif %}"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span class="label" data-i18n="reports">Relatóriu</span></a>
 </nav>

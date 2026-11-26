@@ -4,6 +4,7 @@
 {% block title %}Admin - {{ current_restaurant.name }}{% endblock %}
 {% block role %}admin{% endblock %}
 {% block default_panel %}overview-panel{% endblock %}
+{% block panel_redirects %}audit-panel={% url 'reports' %}#audit{% endblock %}
 
 {% block topbar %}{% include 'base/_nav_admin.html' %}{% endblock %}
 {% block tabbar %}{% include 'base/_tabbar_admin.html' %}{% endblock %}
@@ -34,6 +35,8 @@
     <div class="kpi" data-kpi="average"><div class="kpi-label" data-i18n="ov_kpi_average">Média ba transasaun</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
     <div class="kpi" data-kpi="orders"><div class="kpi-label" data-i18n="ov_kpi_orders">Pedidu</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
     <div class="kpi" data-kpi="rejection_rate"><div class="kpi-label" data-i18n="ov_kpi_rejection">Taxa rekuza</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="visitors"><div class="kpi-label" data-i18n="ov_kpi_visitors">Vizitante</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
+    <div class="kpi" data-kpi="unpaid"><div class="kpi-label" data-i18n="ov_kpi_unpaid">La selu (sai la selu)</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
     <div class="kpi" data-kpi="tables"><div class="kpi-label" data-i18n="ov_kpi_tables">Meza okupadu</div><div class="kpi-value" data-value>-</div><div class="kpi-delta" data-delta></div></div>
   </div>
 
@@ -46,7 +49,7 @@
     </div>
     <div class="col-lg-4">
       <div class="surface surface-pad h-100">
-        <div class="chart-card-head"><h2 class="section-title" data-i18n="rpt_type_payment_methods">Métodu pagamentu</h2></div>
+        <div class="chart-card-head"><h2 class="section-title" data-i18n="rpt_type_order_types">Tipu pedidu</h2></div>
         <div id="ov-methods"></div>
       </div>
     </div>
@@ -61,6 +64,16 @@
       <div class="surface surface-pad h-100">
         <div class="chart-card-head"><h2 class="section-title" data-i18n="ov_chart_status">Status pedidu</h2></div>
         <div id="ov-statuses"></div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="surface surface-pad h-100">
+        <div class="chart-card-head">
+          <h2 class="section-title" data-i18n="ov_chart_visitors">Vizitante (dine in)</h2>
+          <span class="fs-7 text-tertiary" id="ov-visitors-meta"></span>
+        </div>
+        <div id="ov-visitors"></div>
       </div>
     </div>
 
@@ -105,6 +118,7 @@
 
 <!-- Menu -->
 <section class="app-panel" id="menu-panel" aria-labelledby="menu-title" hidden>
+  {% include 'admin_custom/_catalog_tabs.html' %}
   <div class="page-head">
     <div>
       <h1 class="page-title" id="menu-title" data-i18n="menu_stock_title">Menu no stok</h1>
@@ -135,12 +149,16 @@
             <th data-i18n="th_cat_col">Kategoria</th>
             <th class="text-end" data-i18n="th_price_col">Presu</th>
             <th data-i18n="th_stock_status">Stok</th>
+            <th data-i18n="menu_th_rating">Rating</th>
+            <th class="text-end" data-i18n="stock_th_quota">Kuota</th>
+            <th class="text-end" data-i18n="stock_th_sold">Faan</th>
+            <th class="text-end" data-i18n="stock_th_left">Sobra</th>
             <th class="text-end"><span class="visually-hidden" data-i18n="actions">Asaun</span></th>
           </tr>
         </thead>
         <tbody>
           {% for item in menu_items %}
-            <tr class="admin-menu-row" data-cat-id="{{ item.category_id }}" data-search="{{ item.name|lower }} {{ item.sku|default:''|lower }} {{ item.description|default:''|lower }}">
+            <tr class="admin-menu-row" data-cat-id="{{ item.category_id }}" data-state="{{ item.eff.state }}" data-search="{{ item.name|lower }} {{ item.sku|default:''|lower }} {{ item.description|default:''|lower }}">
               <td class="cell-primary">
                 <div class="d-flex align-items-center gap-2-5">
                   <img src="{{ item.display_image }}" alt="" class="thumb" loading="lazy" data-fallback="{% static 'icons/default-food.png' %}" onerror="this.onerror=null;this.src=this.dataset.fallback">
@@ -154,20 +172,41 @@
               <td data-label="Kategoria" data-i18n-label="th_cat_col"><span class="badge-soft"><i class="fa-solid fa-{{ item.category.icon_name|default:'utensils' }}" aria-hidden="true"></i>{{ item.category.name }}</span></td>
               <td class="text-end tabular fw-semibold d-none d-md-table-cell">${{ item.price }}</td>
               <td data-label="Stok" data-i18n-label="th_stock_status">
-                {% if item.availability == 'AVAILABLE' %}
+                {% if item.eff.state == 'AVAILABLE' %}
                   <span class="badge-soft tone-success" data-i18n="stock_available">Iha</span>
-                {% elif item.availability == 'SOLD_OUT' %}
+                {% elif item.eff.state == 'CLOSED_TODAY' %}
+                  <span class="badge-soft tone-danger" data-i18n="stock_closed_today">Taka ohin</span>
+                {% elif item.eff.state == 'QUOTA_REACHED' %}
+                  <span class="badge-soft tone-warning" data-i18n="stock_quota_reached">Kuota to'o</span>
+                {% elif item.eff.state == 'SOLD_OUT' %}
                   <span class="badge-soft tone-danger" data-i18n="stock_sold_out">Hotu</span>
                 {% else %}
                   <span class="badge-soft" data-i18n="stock_inactive">La ativu</span>
                 {% endif %}
               </td>
+              <td data-label="Rating" data-i18n-label="menu_th_rating">
+                {% if item.rating_count %}
+                  <button type="button" class="rating-pill" onclick="openMenuReviews('{{ item.id }}', this.dataset.name)" data-name="{{ item.name }}" data-i18n-title="menu_reviews_title" title="Review">
+                    <i class="fa-solid fa-star" aria-hidden="true"></i><span class="tabular">{{ item.rating_avg|floatformat:1 }}</span><span class="text-tertiary tabular">({{ item.rating_count }})</span>
+                  </button>
+                {% else %}
+                  <span class="text-tertiary fs-8" data-i18n="menu_no_rating">Seidauk iha rating</span>
+                {% endif %}
+              </td>
+              <td class="text-end" data-label="Kuota" data-i18n-label="stock_th_quota">
+                <form class="quota-inline" onsubmit="event.preventDefault(); saveInlineQuota('{{ item.id }}', this);" novalidate>
+                  <input type="number" inputmode="numeric" min="1" step="1" class="form-control form-control-sm tabular quota-inline-input" name="daily_quota" value="{{ item.daily_quota|default_if_none:'' }}" data-initial="{{ item.daily_quota|default_if_none:'' }}" placeholder="∞" aria-label="Kuota" data-i18n-title="stock_th_quota" title="Kuota" oninput="markQuotaDirty(this)">
+                  <button type="submit" class="btn btn-sm btn-primary btn-icon quota-inline-save" hidden aria-label="Rai" data-i18n-title="save" title="Rai"><i class="fa-solid fa-check" aria-hidden="true"></i></button>
+                </form>
+              </td>
+              <td class="text-end tabular js-quota-sold" data-label="Faan" data-i18n-label="stock_th_sold">{{ item.eff.sold }}</td>
+              <td class="text-end tabular js-quota-left" data-label="Sobra" data-i18n-label="stock_th_left">{% if item.eff.remaining is None %}-{% else %}{{ item.eff.remaining }}{% endif %}</td>
               <td class="cell-actions text-end">
                 <div class="d-inline-flex gap-1">
-                  {% if item.availability == 'AVAILABLE' %}
-                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="toggleMenuItem('{{ item.id }}', this)"><span data-i18n="btn_mark_sold_out">Marka hotu</span></button>
-                  {% else %}
-                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="toggleMenuItem('{{ item.id }}', this)"><span data-i18n="btn_mark_available">Marka iha</span></button>
+                  {% if item.eff.state == 'CLOSED_TODAY' %}
+                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="reopenMenuItem('{{ item.id }}', this)"><span data-i18n="stock_btn_reopen">Loke fali</span></button>
+                  {% elif item.eff.state == 'AVAILABLE' or item.eff.state == 'QUOTA_REACHED' %}
+                    <button type="button" class="btn btn-sm btn-secondary-app" onclick="closeMenuItemToday('{{ item.id }}', this)"><span data-i18n="stock_btn_close_today">Taka ohin</span></button>
                   {% endif %}
                   <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openEditMenuItemModal('{{ item.id }}')" aria-label="Edita" data-i18n-title="btn_edit_menu" title="Edita"><i class="fa-solid fa-pen"></i></button>
                   <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" onclick="confirmDeleteMenuItem('{{ item.id }}', this.dataset.name)" data-name="{{ item.name }}" aria-label="Hamos" data-i18n-title="btn_delete_menu" title="Hamos"><i class="fa-solid fa-trash-can"></i></button>
@@ -175,9 +214,9 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><div class="empty-state-title" data-i18n="no_menu_items">Seidauk iha menu</div></div></td></tr>
+            <tr><td colspan="9" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><div class="empty-state-title" data-i18n="no_menu_items">Seidauk iha menu</div></div></td></tr>
           {% endfor %}
-          <tr id="admin-menu-empty-filtered" hidden><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><div data-i18n="menu_no_results">Menu la hetan</div></div></td></tr>
+          <tr id="admin-menu-empty-filtered" hidden><td colspan="9" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><div data-i18n="menu_no_results">Menu la hetan</div></div></td></tr>
         </tbody>
       </table>
     </div>
@@ -186,6 +225,7 @@
 
 <!-- Categories -->
 <section class="app-panel" id="categories-panel" aria-labelledby="cat-title" hidden>
+  {% include 'admin_custom/_catalog_tabs.html' %}
   <div class="page-head">
     <div>
       <h1 class="page-title" id="cat-title" data-i18n="categories_title">Kategoria</h1>
@@ -364,35 +404,7 @@
   </div>
 </section>
 
-<!-- Audit -->
-<section class="app-panel" id="audit-panel" aria-labelledby="audit-title" hidden>
-  <div class="page-head">
-    <div>
-      <h1 class="page-title" id="audit-title" data-i18n="audit_title">Auditoria</h1>
-      <p class="page-subtitle" data-i18n="audit_desc">Eventu 50 ikus liu.</p>
-    </div>
-  </div>
-  <div class="table-wrap">
-    <div class="table-responsive">
-      <table class="table table-app table-stack fs-7">
-        <thead><tr><th data-i18n="th_action_col">Asaun</th><th data-i18n="th_time">Oras</th><th data-i18n="th_actor">Atór</th><th data-i18n="th_entity">Entidade</th><th data-i18n="th_snapshot">Detallu</th></tr></thead>
-        <tbody>
-          {% for event in audit_events %}
-            <tr>
-              <td class="cell-primary"><span class="badge-soft tone-accent">{{ event.action }}</span></td>
-              <td data-label="Oras" data-i18n-label="th_time" class="tabular text-tertiary">{{ event.created_at|date:"d/m H:i:s" }}</td>
-              <td data-label="Atór" data-i18n-label="th_actor"><strong>{{ event.actor_user.username|default:"SYSTEM" }}</strong> <span class="text-tertiary">{{ event.actor_role }}</span></td>
-              <td data-label="Entidade" data-i18n-label="th_entity">{{ event.entity_type }} <span class="code-text">{{ event.entity_id|slice:":8" }}</span></td>
-              <td data-label="Detallu" data-i18n-label="th_snapshot"><span class="code-text d-inline-block text-start" style="max-width:340px">{{ event.after_data|default:"-"|truncatechars:160 }}</span></td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="5" class="cell-empty"><div class="empty-state"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><div data-i18n="no_audit_logs">Seidauk iha rejistu.</div></div></td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
+{% include 'admin_custom/_settings_panel.html' %}
 {% endblock %}
 
 {% block overlays %}
@@ -442,6 +454,11 @@
               <label class="form-label" for="menu-form-desc" data-i18n="menu_desc">Deskrisaun</label>
               <textarea class="form-control" id="menu-form-desc" rows="2"></textarea>
             </div>
+            <div class="mb-3">
+              <label class="form-label" for="menu-form-quota" data-i18n="stock_daily_quota">Produsaun loron-loron</label>
+              <input type="number" inputmode="numeric" min="1" step="1" class="form-control tabular" id="menu-form-quota" aria-describedby="menu-form-quota-hint">
+              <div class="form-text" id="menu-form-quota-hint" data-i18n="stock_daily_quota_hint">Porsaun maksimu ba loron ida.</div>
+            </div>
             <div>
               <label class="form-label" for="menu-form-prepnote" data-i18n="menu_prep_note">Nota ba dapur</label>
               <input type="text" class="form-control" id="menu-form-prepnote">
@@ -466,6 +483,10 @@
               <input class="form-check-input" type="checkbox" role="switch" id="menu-form-featured">
               <label class="form-check-label" for="menu-form-featured" data-i18n="menu_featured">Menu rekomendadu</label>
             </div>
+            <div class="menu-reviews-block mt-3" id="menu-form-reviews" hidden>
+              <div class="form-label" data-i18n="menu_reviews_title">Review kliente</div>
+              <div class="menu-reviews-list" id="menu-form-reviews-list"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -474,6 +495,21 @@
         <button type="submit" class="btn btn-primary" id="btn-save-menu"><span data-i18n="save">Rai</span></button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Customer reviews of one dish -->
+<div class="modal fade modal-sheet" id="menuReviewsModal" tabindex="-1" aria-labelledby="menu-reviews-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="menu-reviews-modal-title" data-i18n="menu_reviews_title">Review kliente</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Taka"></button>
+      </div>
+      <div class="modal-body">
+        <div class="menu-reviews-list" id="menu-reviews-modal-list"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -642,4 +678,5 @@
 <script src="{% static 'js/charts.js' %}"></script>
 <script src="{% static 'js/admin-overview.js' %}"></script>
 <script src="{% static 'js/admin.js' %}"></script>
+<script src="{% static 'js/admin-settings.js' %}"></script>
 {% endblock %}

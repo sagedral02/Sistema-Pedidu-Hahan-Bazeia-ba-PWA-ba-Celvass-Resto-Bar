@@ -3,6 +3,7 @@ from decimal import Decimal
 from apps.ordering.services import submit_customer_order
 from apps.payments.services import record_cash_payment
 from django.core.exceptions import ValidationError
+from apps.payments.billing import request_bill
 
 @pytest.mark.django_db
 def test_server_authoritative_pricing(active_session, menu_item_fish, menu_item_corn):
@@ -31,6 +32,7 @@ def test_cash_tender_and_change_calculation(active_session, menu_item_fish, cash
     # Confirm order so it is billable
     confirm_order_by_cashier(order=order, confirmed_by=cashier_user)
 
+    request_bill(session=active_session, requested_by=cashier_user, force=True)
     # Bill = $13.00, Tendered = $20.00 -> Change = $7.00
     payment = record_cash_payment(
         session=active_session,
@@ -52,6 +54,7 @@ def test_insufficient_cash_tender_rejected(active_session, menu_item_fish, cashi
     # Confirm order so it is billable
     confirm_order_by_cashier(order=order, confirmed_by=cashier_user)
 
+    request_bill(session=active_session, requested_by=cashier_user, force=True)
     # Bill = $13.00, Tendered = $10.00 -> Must raise ValidationError
     with pytest.raises(ValidationError) as exc:
         record_cash_payment(

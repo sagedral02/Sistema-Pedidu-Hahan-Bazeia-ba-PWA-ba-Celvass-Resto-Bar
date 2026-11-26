@@ -1,0 +1,112 @@
+<!-- Restaurant settings -->
+<section class="app-panel" id="settings-panel" aria-labelledby="settings-title" hidden>
+  <div class="page-head">
+    <div>
+      <h1 class="page-title" id="settings-title" data-i18n="set_title">Konfigurasaun restorante</h1>
+      <p class="page-subtitle" data-i18n="set_desc">Identidade, kontaktu, fatin, oras loke no rekibu.</p>
+    </div>
+    <span class="badge-soft" id="set-open-status" aria-live="polite"></span>
+  </div>
+
+  <form id="settings-form" class="settings-grid" novalidate onsubmit="event.preventDefault(); AdminSettings.save();">
+    <!-- Identity -->
+    <div class="surface surface-pad">
+      <h2 class="section-title mb-3"><i class="fa-solid fa-store" aria-hidden="true"></i> <span data-i18n="set_sec_identity">Identidade</span></h2>
+      <div class="settings-logo mb-3">
+        <div class="settings-logo-preview" id="set-logo-preview" aria-hidden="true"><i class="fa-solid fa-utensils"></i></div>
+        <div class="min-w-0">
+          <div class="fw-semibold" data-i18n="set_logo">Logo</div>
+          <div class="form-text mt-0 mb-2" data-i18n="set_logo_hint">PNG, JPG ka WEBP, makas 5 MB. Logo mós sai ikon aplikasaun.</div>
+          <div class="d-flex flex-wrap gap-2">
+            <label class="btn btn-sm btn-secondary-app mb-0" for="set-logo-file"><i class="fa-solid fa-upload" aria-hidden="true"></i><span data-i18n="set_logo_upload">Upload logo</span></label>
+            <input type="file" id="set-logo-file" class="visually-hidden" accept="image/png,image/jpeg,image/webp,image/gif" onchange="AdminSettings.uploadLogo(this)">
+            <button type="button" class="btn btn-sm btn-ghost text-danger" id="set-logo-remove" onclick="AdminSettings.removeLogo(this)" hidden><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span data-i18n="set_logo_remove">Hasai logo</span></button>
+          </div>
+        </div>
+      </div>
+      <label class="form-label" for="set-name"><span data-i18n="set_name">Naran restorante</span> *</label>
+      <input type="text" class="form-control mb-3" id="set-name" name="name" maxlength="150" required>
+      <div class="row g-2 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label" for="set-short-name" data-i18n="set_short_name">Naran badak (ikon)</label>
+          <input type="text" class="form-control" id="set-short-name" name="short_name" maxlength="30">
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label" for="set-legal-name" data-i18n="set_legal_name">Naran legál</label>
+          <input type="text" class="form-control" id="set-legal-name" name="legal_name" maxlength="200">
+        </div>
+      </div>
+      <label class="form-label" for="set-description" data-i18n="set_description">Deskrisaun badak</label>
+      <textarea class="form-control" id="set-description" name="description" rows="2" maxlength="300"></textarea>
+    </div>
+
+    <!-- Contact -->
+    <div class="surface surface-pad">
+      <h2 class="section-title mb-3"><i class="fa-solid fa-address-book" aria-hidden="true"></i> <span data-i18n="set_sec_contact">Kontaktu</span></h2>
+      <div class="row g-2 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label" for="set-phone" data-i18n="set_phone">Telefone</label>
+          <input type="tel" inputmode="tel" class="form-control" id="set-phone" name="phone" maxlength="50" autocomplete="tel">
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label" for="set-whatsapp" data-i18n="set_whatsapp">WhatsApp</label>
+          <input type="tel" inputmode="tel" class="form-control" id="set-whatsapp" name="whatsapp" maxlength="20" placeholder="+670...">
+        </div>
+      </div>
+      <label class="form-label" for="set-email" data-i18n="set_email">E-mail</label>
+      <input type="email" class="form-control mb-3" id="set-email" name="email" maxlength="254" autocomplete="email">
+      <label class="form-label" for="set-website" data-i18n="set_website">Website</label>
+      <input type="url" class="form-control mb-3" id="set-website" name="website" maxlength="300" placeholder="https://">
+      <div class="row g-2 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label" for="set-instagram">Instagram</label>
+          <input type="url" class="form-control" id="set-instagram" name="instagram" maxlength="300" placeholder="https://instagram.com/...">
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label" for="set-facebook">Facebook</label>
+          <input type="url" class="form-control" id="set-facebook" name="facebook" maxlength="300" placeholder="https://facebook.com/...">
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2" id="set-contact-actions"></div>
+    </div>
+
+    <!-- Location -->
+    <div class="surface surface-pad">
+      <h2 class="section-title mb-3"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> <span data-i18n="set_sec_location">Fatin</span></h2>
+      <label class="form-label" for="set-address" data-i18n="set_address">Enderesu</label>
+      <textarea class="form-control mb-3" id="set-address" name="address" rows="2" maxlength="500"></textarea>
+      <label class="form-label" for="set-maps-url" data-i18n="set_maps_url">Link Google Maps</label>
+      <input type="url" class="form-control" id="set-maps-url" name="maps_url" maxlength="600" placeholder="https://maps.app.goo.gl/...">
+      <div class="form-text mb-3" data-i18n="set_maps_hint">Iha Google Maps: Share, kopia link, depois tempel iha ne'e.</div>
+      <label class="form-label" for="set-coordinates" data-i18n="set_coordinates">Koordenada (opsionál)</label>
+      <input type="text" class="form-control tabular mb-3" id="set-coordinates" name="coordinates" maxlength="40" placeholder="-8.5569, 125.5603">
+      <div class="settings-map mb-2" id="set-map-wrap" hidden>
+        <iframe id="set-map" title="Google Maps" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+      <a class="btn btn-sm btn-secondary-app" id="set-map-open" href="#" target="_blank" rel="noopener" hidden><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i><span data-i18n="set_open_maps">Loke iha Maps</span></a>
+    </div>
+
+    <!-- Opening hours -->
+    <div class="surface surface-pad">
+      <h2 class="section-title mb-1"><i class="fa-solid fa-clock" aria-hidden="true"></i> <span data-i18n="set_sec_hours">Oras loke</span></h2>
+      <p class="form-text mt-0 mb-3" data-i18n="set_hours_hint">Liu oras loke, kliente labele haruka pedidu. Kaixa nafatin bele. Oras taka antes oras loke katak taka liu kalan-boot.</p>
+      <div class="settings-hours" id="set-hours"></div>
+    </div>
+
+    <!-- Tax and receipt -->
+    <div class="surface surface-pad">
+      <h2 class="section-title mb-3"><i class="fa-solid fa-receipt" aria-hidden="true"></i> <span data-i18n="set_sec_receipt">Taxa no rekibu</span></h2>
+      <label class="form-label" for="set-tax" data-i18n="set_tax">Taxa (%)</label>
+      <input type="number" inputmode="decimal" step="0.01" min="0" max="100" class="form-control tabular mb-3" id="set-tax" name="tax_percentage">
+      <label class="form-label" for="set-receipt-note" data-i18n="set_receipt_note">Nota iha rekibu</label>
+      <textarea class="form-control" id="set-receipt-note" name="receipt_note" rows="2" maxlength="300"></textarea>
+      <label class="form-label mt-3" for="set-idle-alert" data-i18n="set_idle_alert">Alerta meza la iha atividade (minutu)</label>
+      <input type="number" inputmode="numeric" step="1" min="0" max="600" class="form-control tabular" id="set-idle-alert" name="idle_alert_minutes" aria-describedby="set-idle-alert-hint">
+      <div class="form-text" id="set-idle-alert-hint" data-i18n="set_idle_alert_hint">Kaixa simu alerta bainhira meza seidauk selu no la iha atividade durante minutu hira ne'e. 0 = desliga.</div>
+    </div>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary btn-lg" id="set-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span data-i18n="save">Rai</span></button>
+    </div>
+  </form>
+</section>

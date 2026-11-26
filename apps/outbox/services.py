@@ -8,6 +8,17 @@ from .models import OutboxEvent, OutboxStatus
 
 logger = logging.getLogger(__name__)
 
+# Broadcast routing. Customers are reached through the session token in the payload, whatever the event.
+# New events must be listed here, otherwise they are stored but never delivered.
+CASHIER_EVENTS = frozenset([
+    'ORDER_CREATED', 'BILL_REQUESTED', 'SESSION_OPENED', 'SESSION_CLOSED', 'PAYMENT_COMPLETED',
+    'TABLE_ACTIVATION_REQUESTED', 'ITEM_STATUS_CHANGED', 'MENU_AVAILABILITY_CHANGED',
+    'KITCHEN_NOTICE', 'KITCHEN_NOTICE_UPDATED', 'BILL_REOPENED', 'TAKEAWAY_READY',
+])
+KITCHEN_EVENTS = frozenset([
+    'ORDER_CONFIRMED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_SERVED', 'ORDER_CANCELLED', 'ITEM_STATUS_CHANGED', 'MENU_AVAILABILITY_CHANGED',
+])
+
 def create_outbox_event(
     *,
     aggregate_type: str,
@@ -32,7 +43,17 @@ def create_outbox_event(
     
     # Trigger dispatch immediately upon transaction commit
     transaction.on_commit(lambda: dispatch_single_event(event.id))
+    # Web Push (phones with the app closed); a no-op when VAPID keys are not configured.
+    transaction.on_commit(lambda: _push(event_type, payload))
     return event
+
+
+def _push(event_type, payload):
+    try:
+        from apps.pwa.push import notify_for_event
+        notify_for_event(event_type, payload)
+    except Exception as exc:  # push must never break the business transaction
+        logger.error(f"Web push for {event_type} failed: {exc}")
 
 def dispatch_single_event(event_id: uuid.UUID):
     """
@@ -57,7 +78,7 @@ def dispatch_single_event(event_id: uuid.UUID):
 
         # Broadcast routing:
         # 1. Cashier group receives all order creations, session open/close, bill requests, payments, and activation requests
-        if event_type in ['ORDER_CREATED', 'BILL_REQUESTED', 'SESSION_OPENED', 'SESSION_CLOSED', 'PAYMENT_COMPLETED', 'TABLE_ACTIVATION_REQUESTED']:
+        if event_type in CASHIER_EVENTS:
             async_to_sync(channel_layer.group_send)(
                 'cashier_channel',
                 {
@@ -68,7 +89,7 @@ def dispatch_single_event(event_id: uuid.UUID):
             )
 
         # 2. Kitchen group receives confirmed orders, prep status, ready status, served status
-        if event_type in ['ORDER_CONFIRMED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_SERVED', 'ORDER_CANCELLED']:
+        if event_type in KITCHEN_EVENTS:
             async_to_sync(channel_layer.group_send)(
                 'kitchen_channel',
                 {

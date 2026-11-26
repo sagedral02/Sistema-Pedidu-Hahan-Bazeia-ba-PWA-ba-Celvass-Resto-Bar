@@ -2,39 +2,131 @@
 {% load static %}
 
 {% block title %}{{ current_restaurant.name }}{% endblock %}
-{% block topbar %}{% endblock %}
-{% block main_class %}p-0{% endblock %}
+{% block role %}customer{% endblock %}
+{% block main_class %}is-medium{% endblock %}
 
-{% block content %}
-<div class="standalone">
-  <div class="standalone-card">
-    <div class="standalone-top">
-      <span class="app-brand">
-        <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
-        <span class="app-brand-text">{{ current_restaurant.name }}</span>
-      </span>
+{% block topbar %}
+<header class="app-topbar">
+  <div class="app-topbar-inner">
+    <a class="app-brand" href="/">
+      {% include 'base/_brand_mark.html' %}
+      <span class="app-brand-text">{{ current_restaurant.short_name|default:current_restaurant.name }}</span>
+    </a>
+    <div class="app-topbar-actions">
       {% include 'base/_lang_menu.html' %}
-    </div>
-
-    <div class="standalone-icon" aria-hidden="true"><i class="fa-solid fa-qrcode"></i></div>
-    <h1 class="standalone-title" data-i18n="scan_qr_prompt">Skanu QR Code iha ita-nia meza</h1>
-    <p class="standalone-text" data-i18n="scan_qr_desc">Atu halo pedidu, skanu QR Code ne'ebé iha ita-nia meza ho kamera telemóvel.</p>
-
-    <ol class="steps">
-      <li data-i18n="step_1">Loke kamera telemóvel</li>
-      <li data-i18n="step_2">Aponta ba QR Code iha meza</li>
-      <li data-i18n="step_3">Hili menu no haruka pedidu</li>
-    </ol>
-
-    <div class="callout tone-info">
-      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-      <div data-i18n="landing_cashier_hint">Kaixa sei verifika pedidu ida-idak molok dapur hahu tein.</div>
-    </div>
-
-    <div class="standalone-footer">
-      <span>{{ current_restaurant.address|default:"Praia dos Coqueiros, Dili" }}</span>
-      <a href="{% url 'login' %}"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i><span data-i18n="staff_portal">Portal Staff</span></a>
+      <a class="btn btn-sm btn-ghost" href="{% url 'login' %}"><i class="fa-solid fa-lock" aria-hidden="true"></i><span class="d-none d-sm-inline" data-i18n="staff_portal">Portal Staff</span></a>
     </div>
   </div>
-</div>
+</header>
+{% endblock %}
+
+{% block content %}
+{% with r=current_restaurant %}
+  <section class="home-hero mb-3" aria-labelledby="home-title">
+    <div class="home-hero-brand">{% include 'base/_brand_mark.html' %}</div>
+    <div class="min-w-0">
+      <h1 class="home-title" id="home-title">{{ r.name }}</h1>
+      {% if r.description %}<p class="home-desc">{{ r.description }}</p>{% endif %}
+      <div class="home-meta">
+        {% if opening.is_open %}
+          <span class="badge-soft tone-success" id="home-open-badge"><i class="fa-solid fa-circle" aria-hidden="true"></i><span data-i18n="home_open_now">Loke agora</span></span>
+        {% else %}
+          <span class="badge-soft tone-danger" id="home-open-badge"><i class="fa-solid fa-door-closed" aria-hidden="true"></i><span data-i18n="home_closed_now">Taka agora</span>{% if opening.next_opening_label %} &middot; <span data-i18n="set_opens_at">Loke iha</span> {{ opening.next_opening_label }}{% endif %}</span>
+        {% endif %}
+        {% if today_hours and today_hours.configured and not today_hours.is_closed %}
+          <span class="fs-7 text-secondary-app"><i class="fa-regular fa-clock" aria-hidden="true"></i> <span data-i18n="home_today">Ohin</span> {{ today_hours.opens_at }} - {{ today_hours.closes_at }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="home-scan surface surface-pad mb-3" aria-labelledby="home-scan-title">
+    <div class="home-scan-icon" aria-hidden="true"><i class="fa-solid fa-qrcode"></i></div>
+    <div class="min-w-0 flex-grow-1">
+      <h2 class="section-title mb-1" id="home-scan-title" data-i18n="scan_qr_prompt">Skanu QR Code iha ita-nia meza</h2>
+      <p class="fs-7 text-tertiary mb-2" data-i18n="home_scan_desc">Menu iha kraik ne'e atu haree de'it. Atu halo pedidu, skanu QR Code iha ita-nia meza.</p>
+      <button type="button" class="btn btn-primary" data-qr-scan id="home-scan-btn"><i class="fa-solid fa-camera" aria-hidden="true"></i><span data-i18n="qr_scan_btn">Skanu QR meza</span></button>
+    </div>
+  </section>
+
+  <div class="menu-section-sticky">
+    <div class="search-field customer-search">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" id="menu-search" class="form-control" placeholder="Buka hahan ka hemu" data-i18n-placeholder="search_placeholder" aria-label="Buka menu" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div class="chip-row" role="toolbar" aria-label="Kategoria">
+      <button type="button" class="chip active" data-category="all" aria-pressed="true"><span data-i18n="all_menu">Hotu</span></button>
+      {% for cat in categories %}
+        <button type="button" class="chip" data-category="{{ cat.slug }}" aria-pressed="false"><i class="fa-solid fa-{{ cat.icon_name|default:'utensils' }}" aria-hidden="true"></i>{{ cat.name }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% for h in highlights %}
+    <div class="menu-highlights{% if h.slug != 'all' %} d-none{% endif %}" data-highlight-for="{{ h.slug }}">
+      {% if h.top_rated %}
+        <section class="hl-section" aria-label="Rating">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-star" aria-hidden="true"></i><span data-i18n="cust_hl_top_rated">Rating aas liu</span></h2>
+          <div class="hl-row">{% for item in h.top_rated %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True readonly=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+      {% if h.most_ordered %}
+        <section class="hl-section" aria-label="Popular">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i><span data-i18n="cust_hl_most_ordered">Pedidu barak liu</span></h2>
+          <div class="hl-row">{% for item in h.most_ordered %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True readonly=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+      {% if h.featured %}
+        <section class="hl-section" aria-label="Featured">
+          <h2 class="section-title hl-title"><i class="fa-solid fa-thumbs-up" aria-hidden="true"></i><span data-i18n="cust_hl_featured">Rekomendasaun restorante</span></h2>
+          <div class="hl-row">{% for item in h.featured %}<div class="hl-card">{% include 'customer/_menu_card.html' with cat_name=item.category.name compact=True readonly=True %}</div>{% endfor %}</div>
+        </section>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <h2 class="section-title mb-2 mt-1" data-i18n="cust_hl_all_menu">Menu hotu</h2>
+  <div class="menu-grid" id="menu-grid">
+    {% for section in menu_sections %}
+      {% with cat=section.category %}
+      {% for item in section.items %}
+        <div class="menu-item-col" data-category="{{ cat.slug }}" data-name="{{ item.name|lower }}" data-desc="{{ item.description|default:''|lower }}">
+          {% include 'customer/_menu_card.html' with cat_name=cat.name readonly=True %}
+        </div>
+      {% endfor %}
+      {% endwith %}
+    {% empty %}
+      <div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-bowl-food" aria-hidden="true"></i><div data-i18n="no_menu_items">Seidauk iha menu</div></div>
+    {% endfor %}
+  </div>
+  <div class="empty-state" id="menu-empty" hidden>
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+    <div class="empty-state-title" data-i18n="menu_no_results">Menu la hetan</div>
+  </div>
+
+  <div class="row g-3 mt-2">
+    <div class="col-lg-7">{% include 'customer/_contact.html' with show_map=True show_all=True %}</div>
+    {% if hours_configured %}
+    <div class="col-lg-5">
+      <section class="surface surface-pad" aria-labelledby="home-hours-title">
+        <h2 class="section-title mb-2" id="home-hours-title" data-i18n="home_hours_title">Oras loke</h2>
+        <ul class="home-hours">
+          {% for h in hours %}
+            <li class="{% if h.weekday == today_weekday %}is-today{% endif %}">
+              <span data-i18n="set_day_{{ h.weekday }}">{{ h.weekday }}</span>
+              {% if not h.configured or h.is_closed %}<span class="text-tertiary" data-i18n="home_closed_day">Taka</span>{% else %}<span class="tabular">{{ h.opens_at }} - {{ h.closes_at }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+    {% endif %}
+  </div>
+
+  <p class="text-center fs-8 text-tertiary mt-4 mb-0">{{ r.legal_name|default:r.name }}</p>
+{% endwith %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/home.js' %}"></script>
 {% endblock %}

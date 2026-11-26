@@ -8,7 +8,9 @@ from django.core.exceptions import ValidationError
 
 from apps.tables.models import TableSession, SessionStatus
 from apps.catalog.models import MenuItem, ItemAvailability
-from .models import Order, OrderItem, OrderStatus, OrderSource, OrderStatusHistory, ActorType, IdempotencyRecord
+from apps.catalog.availability import business_date, menu_availability, QUOTA_REACHED
+from apps.catalog.daily import out_of_stock_menu_ids
+from .models import ItemStatus, Order, OrderItem, OrderStatus, OrderSource, OrderStatusHistory, ActorType, IdempotencyRecord
 from apps.audit.services import log_audit_event
 from apps.outbox.services import create_outbox_event
 
@@ -42,6 +44,8 @@ def submit_customer_order(
         
         if not locked_session.is_active:
             raise ValidationError("Table session is closed or inactive.")
+        if locked_session.status == SessionStatus.PAID:
+            raise ValidationError("This table session is already paid. Please ask the cashier to open a new one.")
 
         # Idempotency Check: Return existing order if key matches for this session
         existing_order = Order.objects.filter(
@@ -65,9 +69,19 @@ def submit_customer_order(
         order_items_to_create = []
 
         item_ids = [item['menu_item_id'] for item in items_data]
+        # Lock the menu rows in a fixed (id) order so two orders for the same dish are serialised without
+        # deadlocking, then check the daily quota against what is already sold.
         menu_items_map = {
-            str(mi.id): mi for mi in MenuItem.objects.filter(id__in=item_ids)
+            str(mi.id): mi for mi in MenuItem.objects.select_for_update().filter(id__in=item_ids).order_by('id')
         }
+        requested = {}
+        for item_dict in items_data:
+            try:
+                requested[str(item_dict.get('menu_item_id'))] = (
+                    requested.get(str(item_dict.get('menu_item_id')), 0) + int(item_dict.get('quantity', 1)))
+            except (TypeError, ValueError):
+                raise ValidationError("Invalid quantity.")
+        day = business_date()
 
         for item_dict in items_data:
             menu_id = str(item_dict.get('menu_item_id'))
@@ -80,8 +94,14 @@ def submit_customer_order(
             menu_item = menu_items_map.get(menu_id)
             if not menu_item:
                 raise ValidationError(f"Menu item '{menu_id}' not found.")
-            if menu_item.availability != ItemAvailability.AVAILABLE:
+            state = menu_availability(menu_item, day)
+            if not state.orderable:
+                if state.state == QUOTA_REACHED:
+                    raise ValidationError(f"Menu item '{menu_item.name}' is sold out for today (daily quota reached).")
                 raise ValidationError(f"Menu item '{menu_item.name}' is currently unavailable/sold out.")
+            if state.remaining is not None and requested[menu_id] > state.remaining:
+                raise ValidationError(
+                    f"Only {state.remaining} portion(s) of '{menu_item.name}' left today.")
 
             unit_price = menu_item.price
             item_subtotal = (unit_price * Decimal(quantity)).quantize(Decimal('0.01'))
@@ -122,6 +142,10 @@ def submit_customer_order(
             confirmed_by=created_by if source == OrderSource.CASHIER else None,
             confirmed_at=timezone.now() if source == OrderSource.CASHIER else None,
         )
+
+        # Ordering again after asking for the bill withdraws the bill: the guest is still eating.
+        from apps.payments.billing import reopen_bill_if_requested
+        reopen_bill_if_requested(locked_session, actor=created_by, request_id=request_id)
 
         for oi in order_items_to_create:
             OrderItem.objects.create(
@@ -193,6 +217,15 @@ def confirm_order_by_cashier(*, order: Order, confirmed_by, request_id: str = ""
                 return locked_order
             raise ValidationError(f"Order cannot be confirmed from status '{locked_order.status}'.")
 
+        # Dishes closed for today (or switched off) since the customer ordered cannot be sent to the kitchen.
+        lines = list(locked_order.items.select_related('menu_item'))
+        out_ids = out_of_stock_menu_ids([l.menu_item for l in lines if l.menu_item_id])
+        dead = [l for l in lines if l.menu_item_id and str(l.menu_item_id) in out_ids and l.status == ItemStatus.QUEUED]
+        live = [l for l in lines if l.status != ItemStatus.UNAVAILABLE]
+        if dead and len(dead) == len(live):
+            names = ', '.join(sorted({l.menu_name_snapshot for l in dead}))
+            raise ValidationError(f"Every item is out of stock today ({names}). Reject this order instead.")
+
         old_status = locked_order.status
         locked_order.status = OrderStatus.CONFIRMED
         locked_order.confirmed_by = confirmed_by
@@ -220,8 +253,14 @@ def confirm_order_by_cashier(*, order: Order, confirmed_by, request_id: str = ""
             request_id=request_id
         )
 
+        if dead:
+            from apps.kitchen.services import change_items_status
+            locked_order = change_items_status(
+                order=locked_order, to_status=ItemStatus.UNAVAILABLE, item_ids=[l.id for l in dead],
+                staff_user=confirmed_by, reason="Out of stock today", request_id=request_id, default_role='CASHIER')
+
         # Outbox event to notify Kitchen & Customer
-        items = list(locked_order.items.all())
+        items = [i for i in locked_order.items.all() if i.status != ItemStatus.UNAVAILABLE]
         create_outbox_event(
             aggregate_type='ORDER',
             aggregate_id=locked_order.id,

@@ -107,6 +107,9 @@
     fill('rejection_rate', k.rejection_rate.value === null ? '\u2014' : k.rejection_rate.value.toFixed(1) + '%',
       k.rejection_rate.delta_points, { unit: 'points', badWhenUp: true });
 
+    if (k.visitors) fill('visitors', count(k.visitors.value), k.visitors.delta_pct);
+    if (k.unpaid) fill('unpaid', money(k.unpaid.value), k.unpaid.delta_pct, { badWhenUp: true });
+
     const tables = cards.tables;
     tables.querySelector('[data-value]').textContent = `${data.tables.occupied} / ${data.tables.total}`;
     tables.querySelector('[data-delta]').replaceChildren();
@@ -138,16 +141,16 @@
     }));
   }
 
-  function renderMethods(data) {
-    const colors = { CASH: '--success', MANUAL_OTHER: '--info' };
+  function renderOrderTypes(data) {
+    const colors = { DINE_IN: '--success', TAKEAWAY: '--info' };
     Charts.donut($('ov-methods'), Object.assign(common(), {
-      ariaLabel: tr('rpt_type_payment_methods'),
+      ariaLabel: tr('rpt_type_order_types'),
       valueLabel: tr('ov_kpi_sales'),
-      items: data.methods.map((m) => ({ key: m.method, label: tr('rpt_method_' + m.method), value: m.total, color: colors[m.method] })),
+      items: data.order_types.map((m) => ({ key: m.order_type, label: tr('rpt_ot_' + m.order_type), value: m.total, color: colors[m.order_type] })),
       format: money,
       centerValue: money,
       centerLabel: tr('total'),
-      onClick: ({ key }) => openHistory('transactions', { method: key, status: 'COMPLETED' }),
+      onClick: ({ key }) => openHistory('transactions', { order_type: key, status: 'COMPLETED' }),
     }));
   }
 
@@ -177,6 +180,32 @@
       items: rows.map(([key, color]) => ({ key, label: tr('ov_st_' + key), value: s[key], color })),
       format: count,
       onClick: ({ key }) => openHistory('orders', { status: filters[key] }),
+    }));
+  }
+
+  function renderVisitors(data) {
+    const v = data.kpi.visitors;
+    if (!v || !$('ov-visitors')) return;
+    const hourly = v.series.granularity === 'hour';
+    const meta = $('ov-visitors-meta');
+    if (meta) {
+      const avg = v.average_per_session === null ? '\u2014' : Number(v.average_per_session).toFixed(1);
+      meta.textContent = `${count(v.sessions)} ${tr('ov_visitors_sessions')} \u00b7 ${avg} ${tr('ov_visitors_avg')} \u00b7 ${count(v.takeaway_orders)} ${tr('ov_visitors_takeaway')}`;
+    }
+    Charts.bar($('ov-visitors'), Object.assign(common(), {
+      ariaLabel: tr('ov_chart_visitors'),
+      labels: v.series.labels,
+      labelFormat: (label) => (hourly ? String(label).padStart(2, '0') : shortDay(label)),
+      tooltipLabel: (label) => (hourly ? hourLabel(label) : fullDay(label)),
+      series: [{ key: 'guests', label: tr('ov_kpi_visitors'), values: v.series.values, color: '--info' }],
+      format: count,
+      integer: true,
+      height: 220,
+      onClick: () => {
+        const params = periodQuery(data);
+        params.set('type', 'visitors');
+        go('#summary', params);
+      },
     }));
   }
 
@@ -280,9 +309,10 @@
     el.rangeGroup.setAttribute('aria-label', tr('ov_range_label'));
     renderKpis(state.data);
     renderTrend(state.data);
-    renderMethods(state.data);
+    renderOrderTypes(state.data);
     renderHours(state.data);
     renderStatuses(state.data);
+    renderVisitors(state.data);
     renderTop(state.data);
     renderCategories(state.data);
     renderCashiers(state.data);

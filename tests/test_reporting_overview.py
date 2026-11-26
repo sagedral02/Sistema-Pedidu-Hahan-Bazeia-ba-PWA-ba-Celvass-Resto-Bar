@@ -13,7 +13,7 @@ from apps.payments.models import PaymentMethod, PaymentStatus
 from apps.reporting.overview import (
     RECENT_ROWS, TOP_CASHIERS, TOP_ITEMS, build_overview, parse_range,
 )
-from apps.reporting.reports import Period, ReportError, daily_sales_report, menu_sales_report, payment_methods_report
+from apps.reporting.reports import Period, ReportError, daily_sales_report, menu_sales_report, order_types_report
 from reporting_helpers import add_item, make_order, make_payment
 
 URL = '/api/v1/admin/overview/'
@@ -97,7 +97,7 @@ def test_empty_database_gives_zeros_and_nulls(restaurant):
     assert data['categories'] == [] and data['cashiers'] == []
     assert data['recent_payments'] == [] and data['recent_rejections'] == []
     assert data['statuses'] == {'waiting': 0, 'active': 0, 'completed': 0, 'rejected': 0, 'cancelled': 0}
-    assert [m['total'] for m in data['methods']] == [0.0, 0.0]
+    assert [m['total'] for m in data['order_types']] == [0.0, 0.0]
 
 
 @pytest.mark.django_db
@@ -171,7 +171,9 @@ def test_breakdowns_match_the_summary_reports(restaurant, active_session, sessio
     add_item(order, 'Ikan', 3, '6.50', fish)
     add_item(order, 'Teh', 5, '1.00', tea)
     make_payment(restaurant, active_session, cashier_user, '20.00', paid_day=today)
-    make_payment(restaurant, session_two, cashier_two, '30.00', paid_day=today, method=PaymentMethod.MANUAL_OTHER)
+    session_two.table.is_takeaway = True
+    session_two.table.save()
+    make_payment(restaurant, session_two, cashier_two, '30.00', paid_day=today)
 
     data = build_overview('7d')
     period = Period(today - timedelta(days=6), today)
@@ -180,10 +182,10 @@ def test_breakdowns_match_the_summary_reports(restaurant, active_session, sessio
     assert data['kpi']['sales']['value'] == float(sales['rpt_sum_total_sales']) == 50.0
     assert data['kpi']['transactions']['value'] == sales['rpt_sum_transactions'] == 2
 
-    methods = {m['method']: m for m in data['methods']}
-    report = {r[0].key: r for r in payment_methods_report(period).rows}
-    assert methods['CASH']['total'] == float(report['rpt_method_CASH'][2]) == 20.0
-    assert methods['MANUAL_OTHER']['count'] == report['rpt_method_MANUAL_OTHER'][1] == 1
+    types = {m['order_type']: m for m in data['order_types']}
+    report = {r[0].key: r for r in order_types_report(period).rows}
+    assert types['DINE_IN']['total'] == float(report['rpt_ot_DINE_IN'][2]) == 20.0
+    assert types['TAKEAWAY']['count'] == report['rpt_ot_TAKEAWAY'][1] == 1
 
     menu = {r[1]: (r[2], float(r[3])) for r in menu_sales_report(period).rows}
     by_qty = {i['name']: (i['qty'], i['revenue']) for i in data['top_items']['by_qty']}
@@ -278,7 +280,7 @@ def test_endpoint_returns_the_dashboard_payload_for_admins(admin_user, restauran
     body = res.json()['data']
     assert body['range'] == '7d'
     assert body['kpi']['sales']['value'] == 15.0
-    assert set(body) >= {'kpi', 'tables', 'trend', 'busy_hours', 'methods', 'top_items', 'categories', 'statuses',
+    assert set(body) >= {'kpi', 'tables', 'trend', 'busy_hours', 'order_types', 'top_items', 'categories', 'statuses',
                          'cashiers', 'recent_payments', 'recent_rejections', 'period'}
 
 

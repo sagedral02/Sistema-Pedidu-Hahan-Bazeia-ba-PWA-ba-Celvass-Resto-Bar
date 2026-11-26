@@ -80,13 +80,14 @@ class HistoryFilters:
     status: str = ''
     source: str = ''
     method: str = ''
+    order_type: str = ''
     cashier: Optional[uuid.UUID] = None
     q: str = ''
 
     def as_dict(self) -> Dict[str, str]:
         return {
             k: str(v) for k, v in (
-                ('status', self.status), ('source', self.source), ('method', self.method),
+                ('status', self.status), ('source', self.source), ('method', self.method), ('order_type', self.order_type),
                 ('cashier', self.cashier or ''), ('q', self.q),
             ) if v
         }
@@ -97,6 +98,9 @@ def parse_filters(kind: str, params) -> HistoryFilters:
     status = (params.get('status') or '').strip()
     source = (params.get('source') or '').strip()
     method = (params.get('method') or '').strip()
+    order_type = (params.get('order_type') or '').strip()
+    if order_type and order_type not in ('DINE_IN', 'TAKEAWAY'):
+        raise ReportError('invalid_filter')
     cashier_raw = (params.get('cashier') or '').strip()
     q = (params.get('q') or '').strip()[:80]
 
@@ -119,7 +123,7 @@ def parse_filters(kind: str, params) -> HistoryFilters:
             cashier = uuid.UUID(cashier_raw)
         except ValueError:
             raise ReportError('invalid_filter')
-    return HistoryFilters(status=status, source=source, method=method, cashier=cashier, q=q)
+    return HistoryFilters(status=status, source=source, method=method, order_type=order_type, cashier=cashier, q=q)
 
 
 def parse_sort(kind: str, raw: Optional[str]) -> str:
@@ -170,6 +174,8 @@ def orders_queryset(period: Optional[Period], user, filters: HistoryFilters):
         qs = qs.filter(status=filters.status)
     if filters.source:
         qs = qs.filter(source=filters.source)
+    if filters.order_type:
+        qs = qs.filter(table_session__table__is_takeaway=(filters.order_type == 'TAKEAWAY'))
     if filters.cashier and not scoped:
         acted_by = OrderStatusHistory.objects.filter(order=OuterRef('pk'), actor_user_id=filters.cashier)
         qs = qs.annotate(_by=Exists(acted_by)).filter(Q(confirmed_by_id=filters.cashier) | Q(created_by_id=filters.cashier) | Q(_by=True))
@@ -218,6 +224,8 @@ def transactions_queryset(period: Optional[Period], user, filters: HistoryFilter
         qs = qs.filter(status=filters.status)
     if filters.method:
         qs = qs.filter(method=filters.method)
+    if filters.order_type:
+        qs = qs.filter(table_session__table__is_takeaway=(filters.order_type == 'TAKEAWAY'))
     if filters.q:
         q = Q(payment_code__icontains=filters.q) | Q(table_session__table__display_name__icontains=filters.q) \
             | Q(table_session__table__table_code__icontains=filters.q)
@@ -261,7 +269,7 @@ def _order_row(o: Order) -> Dict[str, Any]:
         staff = '-'
     return {
         'id': str(o.id), 'created_at': o.created_at, 'code': o.order_code,
-        'table': o.table_session.table.display_name, 'status': o.status, 'source': o.source,
+        'table': o.table_session.label, 'status': o.status, 'source': o.source,
         'item_count': o.item_count, 'grand_total': _money(o.grand_total), 'staff': staff,
     }
 
@@ -269,7 +277,7 @@ def _order_row(o: Order) -> Dict[str, Any]:
 def _transaction_row(p: Payment) -> Dict[str, Any]:
     return {
         'id': str(p.id), 'event_at': p.event_at, 'code': p.payment_code,
-        'table': p.table_session.table.display_name, 'method': p.method, 'status': p.status,
+        'table': p.table_session.label, 'method': p.method, 'status': p.status,
         'amount': _money(p.amount),
         'tendered': _money(p.tendered_amount if p.tendered_amount is not None else p.amount),
         'change': _money(p.change_amount),
@@ -396,7 +404,7 @@ def order_detail(order_id, user, lang: str = 'tet') -> Dict[str, Any]:
         'code': order.order_code,
         'status': order_status_obj(lang, order.status),
         'source': label(lang, f'rpt_source_{order.source}'),
-        'table': order.table_session.table.display_name,
+        'table': order.table_session.label,
         'session_id': str(order.table_session_id),
         'session_code': f'SES-{str(order.table_session_id)[:6].upper()}',
         'created_at': _fmt_dt(order.created_at),
@@ -409,6 +417,8 @@ def order_detail(order_id, user, lang: str = 'tet') -> Dict[str, Any]:
         'items': [{
             'name': i.menu_name_snapshot, 'quantity': i.quantity, 'unit_price': _fmt_money(i.unit_price),
             'subtotal': _fmt_money(i.subtotal), 'note': i.note or '',
+            'status_code': i.status, 'status': label(lang, f'rpt_item_{i.status}'),
+            'unavailable_reason': i.unavailable_reason or '',
         } for i in items],
         'money': {
             'subtotal': _fmt_money(order.subtotal), 'discount': _fmt_money(order.discount_total),
@@ -457,7 +467,7 @@ def transaction_detail(payment_id, user, lang: str = 'tet') -> Dict[str, Any]:
         'void_reason': payment.void_reason or '',
         'voided_by': _person(payment.voided_by) if payment.voided_by_id else '',
         'voided_at': _fmt_dt(payment.updated_at) if payment.status == PaymentStatus.VOIDED else '',
-        'table': session.table.display_name,
+        'table': session.label,
         'session_id': str(session.id),
         'session_code': f'SES-{str(session.id)[:6].upper()}',
         'receipt': None,
@@ -470,7 +480,7 @@ def transaction_detail(payment_id, user, lang: str = 'tet') -> Dict[str, Any]:
             'tendered_amount': str(payment.tendered_amount if payment.tendered_amount is not None else payment.amount),
             'change_amount': str(payment.change_amount or Decimal('0.00')),
             'paid_at': paid_at.isoformat() if paid_at else None,
-            'table_name': session.table.display_name,
+            'table_name': session.label,
             'table_code': session.table.table_code,
             'items': bill.get('items', []),
             'subtotal': str(bill.get('subtotal', payment.amount)),

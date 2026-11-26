@@ -10,7 +10,7 @@
   <div class="standalone-card">
     <div class="standalone-top">
       <span class="app-brand">
-        <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
+        {% include 'base/_brand_mark.html' %}
         <span class="app-brand-text">{{ current_restaurant.name }}</span>
       </span>
       {% include 'base/_lang_menu.html' %}

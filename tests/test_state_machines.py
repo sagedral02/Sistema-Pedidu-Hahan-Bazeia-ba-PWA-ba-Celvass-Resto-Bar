@@ -52,7 +52,9 @@ def test_order_lifecycle_happy_path(active_session, menu_item_fish, cashier_user
     served = mark_order_served(order=ready, staff_user=cashier_user)
     assert served.status == OrderStatus.SERVED
 
-    # 6. Payment
+    # 6. Bill then payment
+    from apps.payments.billing import request_bill
+    request_bill(session=active_session)
     payment = record_cash_payment(
         session=active_session,
         cashier_user=cashier_user,

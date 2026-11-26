@@ -1,11 +1,18 @@
 from django.urls import path
-from . import views
+from . import push_views, views
 
 urlpatterns = [
+    # Web Push
+    path('push/config/', push_views.PushConfigAPIView.as_view(), name='api-push-config'),
+    path('push/unsubscribe/', push_views.PushUnsubscribeAPIView.as_view(), name='api-push-unsubscribe'),
+    path('staff/push/subscribe/', push_views.StaffPushSubscribeAPIView.as_view(), name='api-staff-push-subscribe'),
+    path('public/push/subscribe/', push_views.PublicPushSubscribeAPIView.as_view(), name='api-public-push-subscribe'),
+
     # Public Customer Dine-In API
     path('public/tables/resolve/<str:qr_token>/', views.PublicTableResolveAPIView.as_view(), name='api-public-table-resolve'),
     path('public/tables/<str:qr_token>/request-activation/', views.PublicTableRequestActivationAPIView.as_view(), name='api-public-table-request-activation'),
     path('public/menu/', views.PublicMenuAPIView.as_view(), name='api-public-menu'),
+    path('public/sessions/<str:session_token>/ratings/', views.PublicSessionRatingsAPIView.as_view(), name='api-public-ratings'),
     path('public/sessions/<str:session_token>/orders/', views.PublicOrderSubmitAPIView.as_view(), name='api-public-order-submit'),
     path('public/sessions/<str:session_token>/orders/list/', views.PublicOrderListAPIView.as_view(), name='api-public-order-list'),
     path('public/sessions/<str:session_token>/orders/<str:order_code>/', views.PublicOrderDetailAPIView.as_view(), name='api-public-order-detail'),
@@ -25,21 +32,47 @@ urlpatterns = [
     path('cashier/activation-requests/<uuid:request_id>/approve/', views.CashierApproveActivationAPIView.as_view(), name='api-cashier-approve-activation'),
     path('cashier/activation-requests/<uuid:request_id>/reject/', views.CashierRejectActivationAPIView.as_view(), name='api-cashier-reject-activation'),
     path('cashier/table-sessions/<uuid:session_id>/payments/', views.CashierPaymentAPIView.as_view(), name='api-cashier-payments'),
-    path('cashier/shift/summary/', views.CashierShiftSummaryAPIView.as_view(), name='api-cashier-shift-summary'),
 
 
     # Kitchen API
+    path('cashier/menu/', views.CashierMenuAPIView.as_view(), name='api-cashier-menu'),
+    path('cashier/orders/create/', views.CashierCreateOrderAPIView.as_view(), name='api-cashier-create-order'),
+    path('cashier/table-sessions/<uuid:session_id>/hand-over/', views.CashierHandOverAPIView.as_view(), name='api-cashier-hand-over'),
+    path('cashier/shift/', views.CashierShiftAPIView.as_view(), name='api-cashier-shift'),
+    path('cashier/shift/open/', views.CashierShiftAPIView.as_view(action='open'), name='api-cashier-shift-open'),
+    path('cashier/shift/close/', views.CashierShiftAPIView.as_view(action='close'), name='api-cashier-shift-close'),
+    path('cashier/menu-stock/', views.CashierMenuStockAPIView.as_view(), name='api-cashier-menu-stock'),
+    path('cashier/menu-items/<uuid:item_id>/sold-out/', views.CashierMenuSoldOutAPIView.as_view(), name='api-cashier-menu-sold-out'),
+    path('cashier/takeaway/', views.CashierTakeawayListAPIView.as_view(), name='api-cashier-takeaway'),
+    path('cashier/table-sessions/<uuid:session_id>/request-bill/', views.CashierRequestBillAPIView.as_view(), name='api-cashier-request-bill'),
     path('kitchen/orders/', views.KitchenQueueAPIView.as_view(), name='api-kitchen-queue'),
     path('kitchen/orders/<uuid:order_id>/start/', views.KitchenStartOrderAPIView.as_view(), name='api-kitchen-start-order'),
     path('kitchen/orders/<uuid:order_id>/ready/', views.KitchenReadyOrderAPIView.as_view(), name='api-kitchen-ready-order'),
     path('kitchen/orders/<uuid:order_id>/served/', views.KitchenServedOrderAPIView.as_view(), name='api-kitchen-served-order'),
+    path('kitchen/items/<uuid:item_id>/start/', views.KitchenItemActionAPIView.as_view(action='start'), name='api-kitchen-item-start'),
+    path('kitchen/items/<uuid:item_id>/ready/', views.KitchenItemActionAPIView.as_view(action='ready'), name='api-kitchen-item-ready'),
+    path('kitchen/items/<uuid:item_id>/served/', views.KitchenItemActionAPIView.as_view(action='served'), name='api-kitchen-item-served'),
+    path('kitchen/orders/<uuid:order_id>/items/start/', views.KitchenOrderItemsActionAPIView.as_view(action='start'), name='api-kitchen-items-start'),
+    path('kitchen/orders/<uuid:order_id>/items/ready/', views.KitchenOrderItemsActionAPIView.as_view(action='ready'), name='api-kitchen-items-ready'),
+    path('kitchen/orders/<uuid:order_id>/items/served/', views.KitchenOrderItemsActionAPIView.as_view(action='served'), name='api-kitchen-items-served'),
+    path('kitchen/items/<uuid:item_id>/unavailable/', views.KitchenItemUnavailableAPIView.as_view(), name='api-kitchen-item-unavailable'),
+    path('cashier/kitchen-notices/', views.CashierKitchenNoticesAPIView.as_view(), name='api-cashier-kitchen-notices'),
+    path('cashier/kitchen-notices/<uuid:notice_id>/acknowledge/', views.CashierKitchenNoticeActionAPIView.as_view(action='acknowledge'), name='api-cashier-notice-ack'),
+    path('cashier/kitchen-notices/<uuid:notice_id>/resolve/', views.CashierKitchenNoticeActionAPIView.as_view(action='resolve'), name='api-cashier-notice-resolve'),
+    path('cashier/kitchen-notices/<uuid:notice_id>/sold-out/', views.CashierKitchenNoticeActionAPIView.as_view(action='sold-out'), name='api-cashier-notice-sold-out'),
 
     # Admin API
     path('admin/categories/', views.AdminCategoryListCreateAPIView.as_view(), name='api-admin-categories-list-create'),
     path('admin/categories/<uuid:category_id>/', views.AdminCategoryDetailAPIView.as_view(), name='api-admin-category-detail'),
     path('admin/categories/<uuid:category_id>/toggle-status/', views.AdminCategoryToggleStatusAPIView.as_view(), name='api-admin-category-toggle-status'),
+    path('admin/restaurant/', views.AdminRestaurantSettingsAPIView.as_view(), name='api-admin-restaurant'),
+    path('admin/restaurant/logo/', views.AdminRestaurantLogoAPIView.as_view(), name='api-admin-restaurant-logo'),
     path('admin/menu-items/', views.AdminMenuItemListCreateAPIView.as_view(), name='api-admin-menu-items-list-create'),
     path('admin/menu-items/<uuid:item_id>/', views.AdminMenuItemDetailAPIView.as_view(), name='api-admin-menu-item-detail'),
+    path('admin/menu-items/<uuid:item_id>/close-today/', views.AdminMenuItemCloseTodayAPIView.as_view(), name='api-admin-menu-close-today'),
+    path('admin/menu-items/<uuid:item_id>/quota/', views.AdminMenuItemQuotaAPIView.as_view(), name='api-admin-menu-quota'),
+    path('admin/menu-items/<uuid:item_id>/reviews/', views.AdminMenuItemReviewsAPIView.as_view(), name='api-admin-menu-reviews'),
+    path('admin/menu-items/<uuid:item_id>/reopen/', views.AdminMenuItemReopenAPIView.as_view(), name='api-admin-menu-reopen'),
     path('admin/menu-items/<uuid:item_id>/toggle-availability/', views.AdminToggleMenuItemAvailabilityAPIView.as_view(), name='api-admin-toggle-menu'),
     path('admin/tables/', views.AdminTableListCreateAPIView.as_view(), name='api-admin-tables-list-create'),
     path('admin/tables/<uuid:table_id>/', views.AdminTableDetailAPIView.as_view(), name='api-admin-table-detail'),

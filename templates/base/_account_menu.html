@@ -8,6 +8,11 @@
       <div class="fw-bold">{{ user.get_full_name }}</div>
       <div class="text-tertiary fs-7">{{ user.get_role_display }}</div>
     </li>
+    {% if user.is_admin %}
+    <li><hr class="dropdown-divider"></li>
+    <li><button type="button" class="dropdown-item" data-panel="settings-panel"><i class="fa-solid fa-store" aria-hidden="true"></i> <span data-i18n="set_nav">Konfigurasaun</span></button></li>
+    {% endif %}
+    <li><button type="button" class="dropdown-item" data-push-enable="staff" hidden><i class="fa-solid fa-bell" aria-hidden="true"></i> <span data-push-label data-i18n="push_enable">Ativa notifikasaun</span></button></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-i18n="language">Lian</h6></li>
     <li><button type="button" class="dropdown-item" data-set-lang="tet">Tetun</button></li>

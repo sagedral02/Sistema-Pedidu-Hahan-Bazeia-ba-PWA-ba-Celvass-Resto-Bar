@@ -35,6 +35,9 @@
     historyPane: $('rpt-pane-history'),
     summaryControls: $('rpt-summary-controls'),
     historyControls: $('rpt-history-controls'),
+    auditPane: $('rpt-pane-audit'), // admin only: null for cashiers
+    auditControls: $('rpt-audit-controls'),
+    downloads: $('rpt-downloads'),
   };
   if (!el.form || !el.body) return;
 
@@ -137,7 +140,10 @@
     const raw = decodeURIComponent(window.location.hash.replace(/^#/, ''));
     const [path, queryString] = raw.split('?');
     const parts = (path || '').split('/').filter(Boolean);
-    return { tab: parts[0] === 'history' ? 'history' : 'summary', parts: parts.slice(1), query: new URLSearchParams(queryString || '') };
+    const known = ['summary', 'history', 'audit'].includes(parts[0]) ? parts[0] : 'summary';
+    // A tab that is not on the page (the Audit tab for cashiers) falls back to the summary.
+    const tab = page.tabs[known] ? known : 'summary';
+    return { tab, parts: parts.slice(1), query: new URLSearchParams(queryString || '') };
   }
 
   function syncNav(tab) {
@@ -160,6 +166,11 @@
     el.historyPane.hidden = name !== 'history';
     el.summaryControls.hidden = name !== 'summary';
     el.historyControls.hidden = name !== 'history';
+    if (el.auditPane) el.auditPane.hidden = name !== 'audit';
+    if (el.auditControls) el.auditControls.hidden = name !== 'audit';
+    // Every tab sets its own download URLs on enter (the audit tab exports the audit log).
+    if (el.downloads) el.downloads.hidden = false;
+    page.setDownloads(null, null);
     page.clearError();
     syncNav(name);
   }
@@ -182,6 +193,20 @@
   /** Update the hash without routing, so the URL always reflects the visible tab. */
   page.setHash = function (hash) {
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+  };
+
+  /**
+   * Open an offcanvas without tripping over Bootstrap's transition guard: show() is ignored while a hide is
+   * still running, so wait for `hidden.bs.offcanvas` in that case instead of calling it blindly.
+   */
+  page.showOffcanvas = function (element) {
+    const instance = bootstrap.Offcanvas.getOrCreateInstance(element);
+    if (instance._isShown) return;
+    if (instance._isTransitioning) {
+      element.addEventListener('hidden.bs.offcanvas', () => instance.show(), { once: true });
+      return;
+    }
+    instance.show();
   };
 
   page.registerTab = function (name, impl) {
@@ -319,7 +344,8 @@
   el.tabs.forEach((btn) =>
     btn.addEventListener('click', () => {
       const name = btn.dataset.tab;
-      page.navigate(name === 'history' ? '#history/' + ((page.tabs.history && page.tabs.history.lastKind) || 'orders') : '#summary');
+      if (name === 'history') page.navigate('#history/' + ((page.tabs.history && page.tabs.history.lastKind) || 'orders'));
+      else page.navigate('#' + name);
     })
   );
 

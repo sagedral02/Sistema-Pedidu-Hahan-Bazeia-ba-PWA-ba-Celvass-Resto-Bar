@@ -18,7 +18,7 @@ const ORDER_STATUS = {
 };
 
 // Must match apps/tables/services.request_bill_for_session.
-const COOKING_STATUSES = ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING'];
+const COOKING_STATUSES = ['WAITING_CASHIER_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'READY'];
 
 class CustomerApp {
   constructor(config) {
@@ -28,6 +28,11 @@ class CustomerApp {
     this.tableCode = config.tableCode || '';
     this.tableName = config.tableName || '';
     this.defaultImage = config.defaultImage || '/static/icons/default-food.png';
+    this.guestLimit = Math.max(1, parseInt(config.guestLimit, 10) || 25);
+    this.pendingMine = Boolean(config.pendingMine);
+    this.isOpen = config.isOpen !== false;
+    this.sessionStatus = config.sessionStatus || '';
+    this.leaving = false;
 
     this.storageKey = `celvass_cart_${this.sessionToken || this.qrToken || 'default'}`;
     this.cart = this.loadCart();
@@ -46,7 +51,7 @@ class CustomerApp {
   // Setup
   // ------------------------------------------------------------------
   init() {
-    if (!this.sessionToken && this.qrToken) this.startActivationFlow();
+    if (!this.sessionToken && this.qrToken && this.pendingMine) this.startActivationFlow();
 
     this.bindMenu();
     this.bindItemModal();
@@ -78,13 +83,12 @@ class CustomerApp {
       });
     }
 
-    const grid = document.getElementById('menu-grid');
-    if (grid) {
-      grid.addEventListener('click', (e) => {
+    document.querySelectorAll('#menu-grid, .menu-highlights').forEach((root) => {
+      root.addEventListener('click', (e) => {
         const card = e.target.closest('.menu-card');
         if (card) this.handleCardClick(card);
       });
-    }
+    });
   }
 
   setCategory(slug) {
@@ -98,8 +102,16 @@ class CustomerApp {
     this.applyFilters();
   }
 
+  /** Highlight rows follow the category chip and are hidden while searching. */
+  syncHighlights(q) {
+    document.querySelectorAll('.menu-highlights[data-highlight-for]').forEach((box) => {
+      box.classList.toggle('d-none', Boolean(q) || box.dataset.highlightFor !== this.activeCategory);
+    });
+  }
+
   applyFilters() {
     const q = (document.getElementById('menu-search')?.value || '').toLowerCase().trim();
+    this.syncHighlights(q);
     let visible = 0;
     document.querySelectorAll('.menu-item-col').forEach((col) => {
       const matchCat = this.activeCategory === 'all' || col.dataset.category === this.activeCategory;
@@ -118,11 +130,16 @@ class CustomerApp {
       return;
     }
     if (!this.sessionActive) {
-      this.requestTableActivation(true);
+      if (!this.isOpen) {
+        showToast(t('cust_closed_title'), 'warning');
+        return;
+      }
+      this.showGuestStep();
       showToast(t('session_not_open_toast'), 'warning');
       return;
     }
     this.openItemModal({
+      remaining: card.dataset.remaining === '' || card.dataset.remaining === undefined ? null : parseInt(card.dataset.remaining, 10),
       id: card.dataset.itemId,
       name: card.dataset.itemName,
       price: parseFloat(card.dataset.itemPrice) || 0,
@@ -145,7 +162,11 @@ class CustomerApp {
       });
     }
     window.adjustModalQty = (delta) => {
-      this.modalQty = Math.min(50, Math.max(1, this.modalQty + delta));
+      const cap = this.maxAddable(this.modalItem);
+      this.modalQty = Math.min(cap, Math.max(1, this.modalQty + delta));
+      if (delta > 0 && this.modalQty === cap && this.modalItem && this.modalItem.remaining !== null) {
+        showToast(`${t('cust_max_portions')} ${this.modalItem.remaining}`, 'info');
+      }
       this.renderModalQty();
     };
   }
@@ -173,10 +194,101 @@ class CustomerApp {
   // ------------------------------------------------------------------
   // Table activation (session not open yet)
   // ------------------------------------------------------------------
+  /** Waiting for the cashier after this device asked to open the table (never sends a request by itself). */
   startActivationFlow() {
+    document.getElementById('guest-step')?.classList.add('d-none');
     this.renderActivationWaitingBanner();
-    this.requestTableActivation(false);
     this.startSessionWatch();
+  }
+
+  showGuestStep() {
+    document.getElementById('recent-session-box')?.classList.add('d-none');
+    const step = document.getElementById('guest-step');
+    if (!step) return;
+    step.classList.remove('d-none');
+    step.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  guestCount() {
+    return parseInt(document.getElementById('guest-count')?.textContent, 10) || 1;
+  }
+
+  adjustGuests(delta) {
+    const out = document.getElementById('guest-count');
+    if (!out) return;
+    const next = Math.min(this.guestLimit, Math.max(1, this.guestCount() + delta));
+    out.textContent = next;
+    if (delta > 0 && next === this.guestLimit) showToast(`${t('cust_guests_max')} ${this.guestLimit}`, 'info');
+  }
+
+  async submitGuestCount() {
+    const btn = document.getElementById('btn-guest-submit');
+    if (btn) btn.disabled = true;
+    const ok = await this.requestTableActivation(true, this.guestCount());
+    if (ok) {
+      this.startActivationFlow();
+    } else if (btn) {
+      btn.disabled = false;
+    }
+  }
+
+  thanksUrl() {
+    return `/t/${encodeURIComponent(this.qrToken)}/thanks/${encodeURIComponent(this.sessionToken)}/`;
+  }
+
+  /**
+   * Reload the table page at most once every 15 seconds. The server decides what to show (menu, or the
+   * "table occupied" page for another phone), so a reload can never turn into a loop.
+   */
+  safeReload() {
+    const key = `celvas_reload_${this.qrToken}`;
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem(key)) || 0;
+    } catch {
+      /* private mode: fall through */
+    }
+    if (Date.now() - last < 15000) {
+      this.showLockedNotice();
+      return;
+    }
+    try {
+      sessionStorage.setItem(key, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
+    window.location.reload();
+  }
+
+  /** Another phone owns this table: stop polling and explain instead of retrying. */
+  showLockedNotice() {
+    this.leaving = true;
+    if (this.sessionWatchTimer) clearInterval(this.sessionWatchTimer);
+    if (this.ordersTimer) clearInterval(this.ordersTimer);
+    const el = document.getElementById('session-activation-status-banner');
+    if (el) {
+      el.innerHTML = `
+        <div class="callout tone-warning mb-3" role="alert">
+          <i class="fa-solid fa-lock" aria-hidden="true"></i>
+          <div>
+            <div class="callout-title">${escapeHtml(t('occupied_title'))}</div>
+            <div>${escapeHtml(t('occupied_help'))}</div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              <button type="button" class="btn btn-sm btn-primary" onclick="window.QrScanner && QrScanner.open()"><i class="fa-solid fa-qrcode" aria-hidden="true"></i>${escapeHtml(t('qr_scan_btn'))}</button>
+              <a class="btn btn-sm btn-secondary-app" href="/">${escapeHtml(t('btn_back_home'))}</a>
+            </div>
+          </div>
+        </div>`;
+      el.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  /** The table was paid and closed: leave the menu for the thank-you page (no new opening request). */
+  goToThanks() {
+    if (this.leaving || !this.qrToken || !this.sessionToken) return;
+    this.leaving = true;
+    localStorage.removeItem(this.storageKey);
+    window.location.replace(this.thanksUrl());
   }
 
   renderActivationWaitingBanner() {
@@ -192,17 +304,19 @@ class CustomerApp {
       </div>`;
   }
 
-  async requestTableActivation(userTriggered = false) {
-    if (!this.qrToken || this.sessionActive) return;
+  async requestTableActivation(userTriggered = false, guests = null) {
+    if (!this.qrToken || this.sessionActive || !guests) return false;
     try {
-      const res = await apiPost(`/api/v1/public/tables/${encodeURIComponent(this.qrToken)}/request-activation/`, { guest_count: 2 });
+      const res = await apiPost(`/api/v1/public/tables/${encodeURIComponent(this.qrToken)}/request-activation/`, { guest_count: guests });
       if (res.status === 'ALREADY_OPEN' && res.session_token) {
         this.handleSessionOpened();
       } else if (userTriggered) {
         showToast(t('waiting_cashier_activation'), 'info');
       }
+      return true;
     } catch (e) {
       if (userTriggered) showToast(e.message, 'error');
+      return false;
     }
   }
 
@@ -241,7 +355,7 @@ class CustomerApp {
           <div class="callout-title">${escapeHtml(t('session_opened_celebration'))}</div>
         </div>`;
     }
-    setTimeout(() => window.location.reload(), 600);
+    setTimeout(() => this.safeReload(), 600);
   }
 
   // ------------------------------------------------------------------
@@ -261,12 +375,38 @@ class CustomerApp {
     this.renderCartUI();
   }
 
+  /** Portions of a dish already in the cart (all notes together). */
+  inCart(id) {
+    return this.cart.filter((i) => i.id === id).reduce((sum, i) => sum + i.quantity, 0);
+  }
+
+  /** How many more portions of this dish may be added: the 50 cap, or today's remaining stock. */
+  maxAddable(item) {
+    if (!item) return 50;
+    const room = 50 - this.inCart(item.id);
+    if (item.remaining === null || item.remaining === undefined) return Math.max(1, room);
+    return Math.max(1, Math.min(room, item.remaining - this.inCart(item.id)));
+  }
+
   addToCart(item, quantity = 1, note = '') {
+    const hasRemaining = item.remaining !== null && item.remaining !== undefined;
+    if (hasRemaining) {
+      const room = item.remaining - this.inCart(item.id);
+      if (room <= 0) {
+        showToast(`${t('cust_max_portions')} ${item.remaining}`, 'warning');
+        return;
+      }
+      quantity = Math.min(quantity, room);
+    }
     const existing = this.cart.find((i) => i.id === item.id && i.note === note);
     if (existing) {
       existing.quantity = Math.min(50, existing.quantity + quantity);
+      if (hasRemaining) existing.remaining = item.remaining;
     } else {
-      this.cart.push({ id: item.id, name: item.name, price: parseFloat(item.price) || 0, quantity, note });
+      this.cart.push({
+        id: item.id, name: item.name, price: parseFloat(item.price) || 0, quantity, note,
+        remaining: hasRemaining ? item.remaining : null,
+      });
     }
     this.saveCart();
     showToast(`${t('added_to_cart')} ${item.name}`, 'success');
@@ -275,6 +415,10 @@ class CustomerApp {
   updateQuantity(index, delta) {
     const line = this.cart[index];
     if (!line) return;
+    if (delta > 0 && line.remaining !== null && line.remaining !== undefined && this.inCart(line.id) >= line.remaining) {
+      showToast(`${t('cust_max_portions')} ${line.remaining}`, 'warning');
+      return;
+    }
     line.quantity += delta;
     if (line.quantity <= 0) {
       this.cart.splice(index, 1);
@@ -435,7 +579,8 @@ class CustomerApp {
         this.checkBillButtonEligibility();
       }
     } catch (e) {
-      if (e.code === 'DEVICE_LOCKED') window.location.reload();
+      if (e.code === 'DEVICE_LOCKED') this.safeReload();
+      if (e.code === 'TABLE_SESSION_NOT_OPEN') this.goToThanks();
     }
   }
 
@@ -475,7 +620,15 @@ class CustomerApp {
     const rows = this.activeOrders
       .map((o) => {
         const st = ORDER_STATUS[o.status] || { cls: 'status-served', key: o.status };
-        const items = (o.items || []).map((i) => `${i.quantity}× ${escapeHtml(i.menu_name_snapshot)}`).join(', ');
+        const items = (o.items || []).map((i) => {
+          const label = `${i.quantity}× ${escapeHtml(i.menu_name_snapshot)}`;
+          if (i.status === 'UNAVAILABLE') return `<s>${label}</s> <span class="badge-soft tone-danger">${escapeHtml(t('cust_item_UNAVAILABLE'))}</span>`;
+          if (i.status === 'READY' || i.status === 'COOKING' || i.status === 'SERVED') {
+            const tone = i.status === 'COOKING' ? 'tone-accent' : (i.status === 'READY' ? 'tone-success' : '');
+            return `${label} <span class="badge-soft ${tone}">${escapeHtml(t(`cust_item_${i.status}`))}</span>`;
+          }
+          return label;
+        }).join('<br>');
         const rejected = o.status === 'REJECTED' && o.rejection_reason
           ? `<div class="fs-7 mt-1" style="color:var(--danger)">${escapeHtml(t('reason'))} ${escapeHtml(o.rejection_reason)}</div>`
           : '';
@@ -502,6 +655,44 @@ class CustomerApp {
         </div>
         ${rows}
       </section>`;
+  }
+
+  /** Re-read today's availability so sold-out flags and "Left n" badges follow the kitchen. */
+  async refreshMenu() {
+    try {
+      const categories = (await apiGet('/api/v1/public/menu/')) || [];
+      const byId = {};
+      categories.forEach((c) => (c.items || []).forEach((i) => { byId[i.id] = i; }));
+      document.querySelectorAll('.menu-card[data-item-id]').forEach((card) => {
+        const info = byId[card.dataset.itemId];
+        if (!info) return;
+        const remaining = info.remaining === null || info.remaining === undefined ? '' : String(info.remaining);
+        card.dataset.available = info.orderable ? '1' : '0';
+        card.dataset.remaining = remaining;
+        card.classList.toggle('is-unavailable', !info.orderable);
+        if (info.orderable) card.removeAttribute('aria-disabled'); else card.setAttribute('aria-disabled', 'true');
+        const media = card.querySelector('.menu-card-media');
+        let flag = card.querySelector('[data-role="flag"]');
+        if (!info.orderable || remaining !== '') {
+          if (!flag) {
+            flag = document.createElement('span');
+            flag.dataset.role = 'flag';
+            media.appendChild(flag);
+          }
+          flag.className = `menu-card-flag ${info.orderable ? 'tone-warning' : 'tone-danger'}`;
+          flag.textContent = info.orderable ? `${t('cust_stock_left')} ${remaining}` : t('sold_out');
+        } else if (flag) {
+          flag.remove();
+        }
+      });
+      // keep the cart within what is left
+      this.cart.forEach((line) => {
+        const info = byId[line.id];
+        if (info) line.remaining = info.remaining === undefined ? null : info.remaining;
+      });
+    } catch (e) {
+      console.error('menu refresh', e);
+    }
   }
 
   async requestBill() {
@@ -536,18 +727,32 @@ class CustomerApp {
         SoundEffects.playSuccess();
       } else if (msg.event === 'ORDER_REJECTED') {
         showToast(`${t('order_rejected_toast')} ${code}: ${msg.data?.reason || ''}`, 'error');
+      } else if (msg.event === 'ITEM_STATUS_CHANGED') {
+        const names = (msg.data?.items || []).map((i) => i.name).join(', ');
+        if (msg.data?.status === 'UNAVAILABLE') {
+          showToast(`${t('cust_item_unavailable_toast')} ${names}`, 'warning');
+        } else if (msg.data?.status === 'READY') {
+          showToast(`${t('cust_item_ready_toast')} ${names}`, 'info');
+          SoundEffects.playBell();
+        }
+        this.refreshMenu();
       } else if (['ORDER_PREPARING', 'ORDER_READY', 'ORDER_SERVED'].includes(msg.event)) {
         showToast(`${t('order_status_toast')} ${code}`, 'info');
       } else if (msg.event === 'SESSION_CLOSED') {
         showToast(t('session_closed_toast'), 'info');
-        setTimeout(() => window.location.reload(), 2000);
+        setTimeout(() => this.goToThanks(), 1500);
         return;
+      } else if (msg.event === 'PAYMENT_COMPLETED') {
+        showToast(t('cust_paid_toast'), 'success');
       }
       this.loadActiveOrders();
     });
 
-    setInterval(() => {
-      if (!document.hidden) this.loadActiveOrders();
+    this.ordersTimer = setInterval(() => {
+      if (!document.hidden && !this.leaving) this.loadActiveOrders();
     }, 10000);
+    setInterval(() => {
+      if (!document.hidden && !this.leaving) this.refreshMenu();
+    }, 30000);
   }
 }

@@ -1,0 +1,26 @@
+{% with r=current_restaurant %}
+{% if r.whatsapp_link or r.tel_link or r.maps_link or r.address or r.email or r.website or r.instagram or r.facebook %}
+<section class="surface surface-pad contact-card" aria-labelledby="contact-title">
+  <h2 class="section-title mb-2" id="contact-title" data-i18n="cust_contact_title">Kontaktu restorante</h2>
+  {% if r.address %}<p class="text-secondary-app fs-7 mb-2"><i class="fa-solid fa-location-dot me-1" aria-hidden="true"></i>{{ r.address }}</p>{% endif %}
+  {% if show_map and r.maps_embed_url %}
+    <div class="contact-map mb-2">
+      <iframe src="{{ r.maps_embed_url }}" title="Google Maps" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+    </div>
+  {% endif %}
+  <div class="contact-actions">
+    {% if r.whatsapp_link %}<a class="btn btn-success" href="{{ r.whatsapp_link }}" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><span>WhatsApp</span></a>{% endif %}
+    {% if r.tel_link %}<a class="btn btn-secondary-app" href="{{ r.tel_link }}"><i class="fa-solid fa-phone" aria-hidden="true"></i><span data-i18n="set_call">Telefone</span></a>{% endif %}
+    {% if r.maps_link %}<a class="btn btn-secondary-app" href="{{ r.maps_link }}" target="_blank" rel="noopener"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i><span data-i18n="set_open_maps">Loke iha Maps</span></a>{% endif %}
+  </div>
+  {% if show_all and r.email or show_all and r.website or show_all and r.instagram or show_all and r.facebook %}
+    <ul class="contact-links">
+      {% if r.email %}<li><i class="fa-solid fa-envelope" aria-hidden="true"></i><a href="mailto:{{ r.email }}">{{ r.email }}</a></li>{% endif %}
+      {% if r.website %}<li><i class="fa-solid fa-globe" aria-hidden="true"></i><a href="{{ r.website }}" target="_blank" rel="noopener">{{ r.website }}</a></li>{% endif %}
+      {% if r.instagram %}<li><i class="fa-brands fa-instagram" aria-hidden="true"></i><a href="{{ r.instagram }}" target="_blank" rel="noopener">Instagram</a></li>{% endif %}
+      {% if r.facebook %}<li><i class="fa-brands fa-facebook" aria-hidden="true"></i><a href="{{ r.facebook }}" target="_blank" rel="noopener">Facebook</a></li>{% endif %}
+    </ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endwith %}

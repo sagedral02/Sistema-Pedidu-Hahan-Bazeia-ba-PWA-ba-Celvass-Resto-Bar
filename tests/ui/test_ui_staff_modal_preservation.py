@@ -237,7 +237,12 @@ def test_delete_with_history_deactivates_account(open_users_panel, active_sessio
 # 3.6 Other panels' modals
 # --------------------------------------------------------------------------- #
 def goto_panel(page, panel_id):
-    page.locator(f'nav.app-nav [data-panel="{panel_id}"]').click()
+    if panel_id == 'categories-panel':
+        # Categories is a tab of the Katalog menu, not a menu of its own.
+        goto_panel(page, 'menu-panel')
+        page.locator('#menu-panel .segmented [data-panel="categories-panel"]').click()
+    else:
+        page.locator(f'nav.app-nav [data-panel="{panel_id}"]').click()
     page.locator(f'#{panel_id}').wait_for(state='visible')
 
 

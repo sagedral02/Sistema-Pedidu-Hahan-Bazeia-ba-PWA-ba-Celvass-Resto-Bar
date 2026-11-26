@@ -57,17 +57,20 @@
   <section class="surface surface-pad" aria-labelledby="items-title">
     <h2 class="section-title mb-2" id="items-title" data-i18n="order_items_detail">Item pedidu</h2>
     {% for item in order.items.all %}
-      <div class="cart-line">
+      <div class="cart-line{% if item.status == 'UNAVAILABLE' %} is-unavailable{% endif %}" data-line-id="{{ item.id }}" data-line-status="{{ item.status }}">
         <div class="cart-line-info">
-          <div class="cart-line-name">{{ item.quantity }}× {{ item.menu_name_snapshot }}</div>
+          <div class="cart-line-name"><span class="cart-line-title">{{ item.quantity }}× {{ item.menu_name_snapshot }}</span>
+            <span class="badge-soft {% if item.status == 'COOKING' %}tone-accent{% elif item.status == 'READY' %}tone-success{% elif item.status == 'UNAVAILABLE' %}tone-danger{% endif %} ms-1" data-role="line-badge" data-i18n="cust_item_{{ item.status }}">{{ item.get_status_display }}</span>
+          </div>
           {% if item.note %}<div class="cart-line-note">{{ item.note }}</div>{% endif %}
+          <div class="cart-line-note{% if item.status != 'UNAVAILABLE' %} d-none{% endif %}" data-role="line-reason"><span data-i18n="cust_item_not_billed">Tidak ditagih</span>{% if item.unavailable_reason %}: {{ item.unavailable_reason }}{% endif %}</div>
         </div>
-        <span class="price">${{ item.subtotal }}</span>
+        <span class="price" data-role="line-price">{% if item.status == 'UNAVAILABLE' %}-{% else %}${{ item.subtotal }}{% endif %}</span>
       </div>
     {% endfor %}
     <div class="d-flex justify-content-between align-items-center pt-3 mt-1 border-top">
       <span class="fw-bold" data-i18n="grand_total">Totál</span>
-      <span class="price fs-5">${{ order.grand_total }}</span>
+      <span class="price fs-5" id="order-grand-total">${{ order.grand_total }}</span>
     </div>
   </section>
 {% endblock %}
@@ -78,15 +81,58 @@
     const sessionToken = "{{ order.table_session.public_token|escapejs }}";
     const orderCode = "{{ order.order_code|escapejs }}";
     const finalStates = ['SERVED', 'COMPLETED', 'REJECTED', 'CANCELLED'];
-    const isFinal = finalStates.includes("{{ order.status|escapejs }}");
-    if (sessionToken && !isFinal) {
-      new WebSocketClient(`/ws/customer/${sessionToken}/`, (msg) => {
-        if (msg.data && msg.data.order_code === orderCode) {
-          SoundEffects.playBell();
-          setTimeout(() => window.location.reload(), 600);
+    const initialStatus = "{{ order.status|escapejs }}";
+    const isFinal = finalStates.includes(initialStatus);
+    const thanksUrl = "{% url 'customer-thanks' qr_token order.table_session.public_token %}";
+    // A paid and closed table goes to the thank-you page instead of staying on an old order.
+    if ("{{ order.table_session.status|escapejs }}" === 'CLOSED') {
+      window.location.replace(thanksUrl);
+      return;
+    }
+    const TONES = { COOKING: 'tone-accent', READY: 'tone-success', UNAVAILABLE: 'tone-danger' };
+
+    // Only the order status needs a full reload (stepper and banner). Item changes are painted in place.
+    async function refresh(fromEvent) {
+      try {
+        const order = await apiGet(`/api/v1/public/sessions/${encodeURIComponent(sessionToken)}/orders/${encodeURIComponent(orderCode)}/`);
+        if (!order) return;
+        if (order.status !== initialStatus) {
+          if (fromEvent) SoundEffects.playBell();
+          setTimeout(() => window.location.reload(), fromEvent ? 600 : 0);
+          return;
         }
+        let changed = false;
+        (order.items || []).forEach((item) => {
+          const row = document.querySelector(`[data-line-id="${CSS.escape(item.id)}"]`);
+          if (!row || row.dataset.lineStatus === item.status) return;
+          changed = true;
+          row.dataset.lineStatus = item.status;
+          row.classList.toggle('is-unavailable', item.status === 'UNAVAILABLE');
+          const badge = row.querySelector('[data-role="line-badge"]');
+          badge.dataset.i18n = `cust_item_${item.status}`;
+          badge.textContent = t(`cust_item_${item.status}`);
+          badge.className = `badge-soft ${TONES[item.status] || ''} ms-1`;
+          const reason = row.querySelector('[data-role="line-reason"]');
+          reason.classList.toggle('d-none', item.status !== 'UNAVAILABLE');
+          row.querySelector('[data-role="line-price"]').textContent = item.status === 'UNAVAILABLE' ? '-' : formatMoney(item.subtotal);
+        });
+        const total = document.getElementById('order-grand-total');
+        if (total && order.grand_total !== undefined) total.textContent = formatMoney(order.grand_total);
+        if (changed && fromEvent) SoundEffects.playBell();
+      } catch (e) {
+        console.error('tracker refresh', e);
+      }
+    }
+
+    if (sessionToken) {
+      new WebSocketClient(`/ws/customer/${sessionToken}/`, (msg) => {
+        if (msg.event === 'SESSION_CLOSED') {
+          window.location.replace(thanksUrl);
+          return;
+        }
+        if (!isFinal && msg.data && msg.data.order_code === orderCode) refresh(true);
       });
-      setInterval(() => { if (!document.hidden) window.location.reload(); }, 15000);
+      if (!isFinal) setInterval(() => { if (!document.hidden) refresh(false); }, 15000);
     }
   })();
 </script>

@@ -96,6 +96,13 @@ def test_every_error_code_has_a_label():
         assert f'rpt_err_{code}' in LABELS[DEFAULT_LANG]
 
 
+def test_audit_labels_exist_in_every_language():
+    for lang in LANG_NAMES:
+        for key in ('rpt_col_action', 'rpt_col_actor', 'rpt_col_entity', 'rpt_sum_events', 'rpt_sum_actors',
+                    'rpt_sum_entities', 'rpt_audit_system'):
+            assert LABELS[lang][key].strip(), (lang, key)
+
+
 def test_page_chrome_keys_exist_in_all_four_browser_languages():
     blocks = _i18n_blocks()
     rpt_keys = {k for lang in LANG_NAMES for k in blocks[lang] if k.startswith('rpt_')}
@@ -108,10 +115,19 @@ def test_page_chrome_keys_exist_in_all_four_browser_languages():
 def test_page_chrome_keys_used_by_templates_and_script_exist():
     blocks = _i18n_blocks()
     used = set()
-    for path in [ROOT / 'templates' / 'reports' / 'index.html', ROOT / 'static' / 'js' / 'reports.js']:
-        used.update(re.findall(r'''(?:data-i18n(?:-placeholder|-title|-label)?="|\btr\(')(rpt_\w+|reports)['"]''',
-                               path.read_text(encoding='utf-8')))
-    used.update(re.findall(r"""'(rpt_\w+)'""", (ROOT / 'static' / 'js' / 'reports.js').read_text(encoding='utf-8')))
+    scripts = [ROOT / 'static' / 'js' / name for name in ('reports.js', 'reports-history.js', 'reports-audit.js')]
+    pages = [ROOT / 'templates' / 'reports' / 'index.html', ROOT / 'templates' / 'base' / '_nav_admin.html',
+             ROOT / 'templates' / 'base' / '_tabbar_admin.html', ROOT / 'templates' / 'admin_custom' / '_catalog_tabs.html']
+    for path in pages + scripts:
+        used.update(re.findall(
+            r'''(?:data-i18n(?:-placeholder|-title|-label)?="|\btr\(')((?:rpt|nav|ov)_\w+|reports|audit_logs|th_\w+|menu_stock|categories_nav|staff_users)['"]''',
+            path.read_text(encoding='utf-8')))
+    for path in scripts:
+        text = path.read_text(encoding='utf-8')
+        # A trailing underscore marks a prefix that the script completes at run time ('rpt_status_' + code).
+        used.update(k for k in re.findall(r"""'(rpt_\w+)'""", text) if not k.endswith('_'))
+        used.update(re.findall(r"""\brow\('([a-z_]+)'""", text))   # detail rows: row('rpt_d_table', value)
+    used = {k for k in used if not k.endswith('_')}   # prefixes completed at run time, e.g. 'rpt_actor_' + type
     assert used
     for lang in LANG_NAMES:
         assert not (used - set(blocks[lang])), (lang, sorted(used - set(blocks[lang])))

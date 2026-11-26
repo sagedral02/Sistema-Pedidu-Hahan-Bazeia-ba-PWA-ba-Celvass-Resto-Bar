@@ -60,12 +60,22 @@ def claim_session_if_unclaimed(session, device_token: str) -> bool:
     return True
 
 
-def parse_guest_count(raw, default: int) -> int:
+def guest_limit(table) -> int:
+    """Most guests a table session may have: the table capacity set by the admin, else MAX_GUEST_COUNT."""
+    capacity = getattr(table, 'capacity', None)
+    return int(capacity) if capacity else MAX_GUEST_COUNT
+
+
+def parse_guest_count(raw, default=None, max_value: int = None) -> int:
     """
-    Convert user input to a guest count in [MIN_GUEST_COUNT, MAX_GUEST_COUNT].
-    Missing values fall back to ``default``. Anything else raises ValidationError.
+    Convert user input to a guest count in [MIN_GUEST_COUNT, max_value] (max_value defaults to
+    MAX_GUEST_COUNT). A missing value falls back to ``default``; with no default it is required.
+    Anything else raises ValidationError.
     """
+    limit = max_value or MAX_GUEST_COUNT
     if raw is None:
+        if default is None:
+            raise ValidationError("Hatama totál bainaka (ema nain hira).")
         return default
     if isinstance(raw, bool):
         raise ValidationError("Totál bainaka la válidu.")
@@ -76,6 +86,6 @@ def parse_guest_count(raw, default: int) -> int:
         if not text.lstrip('-').isdigit():
             raise ValidationError("Totál bainaka tenke numeru.")
         value = int(text)
-    if value < MIN_GUEST_COUNT or value > MAX_GUEST_COUNT:
-        raise ValidationError(f"Totál bainaka tenke entre {MIN_GUEST_COUNT} no {MAX_GUEST_COUNT}.")
+    if value < MIN_GUEST_COUNT or value > limit:
+        raise ValidationError(f"Totál bainaka tenke entre {MIN_GUEST_COUNT} no {limit}.")
     return value

@@ -43,8 +43,12 @@ def render_cell(value: Any, kind: str, lang: str, target: str = 'display') -> st
         return ''
     if isinstance(value, Label):
         return label(lang, value.key)
+    if isinstance(value, str) and kind in ('money', 'percent', 'int', 'decimal'):
+        return value  # placeholder such as '-' (e.g. a shift that is still open)
 
     csv_target = target == 'csv'
+    if kind == 'decimal':
+        return f'{Decimal(value).quantize(Decimal("0.1")):.1f}'
     if kind == 'money':
         amount = Decimal(value).quantize(Decimal('0.01'))
         return f'{amount:.2f}' if csv_target else f'${amount:,.2f}'

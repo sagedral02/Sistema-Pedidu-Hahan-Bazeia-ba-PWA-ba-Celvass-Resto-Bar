@@ -79,6 +79,7 @@ async function apiRequest(endpoint, options = {}) {
     const preferTranslated = ['DEVICE_LOCKED', 'SERVER_ERROR', 'TABLE_SESSION_NOT_OPEN', 'IDEMPOTENCY_KEY_REQUIRED'].includes(code);
     const err = new Error(preferTranslated && translated ? translated : message);
     err.code = code;
+    err.details = data?.error?.details || {};
     err.status = response.status;
     throw err;
   }

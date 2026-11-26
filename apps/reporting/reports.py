@@ -65,7 +65,7 @@ class Period:
 @dataclass(frozen=True)
 class Column:
     label_key: str
-    kind: str = 'text'  # text, int, money, percent, date, datetime
+    kind: str = 'text'  # text, int, decimal (one place), money, percent, date, datetime
     align: str = 'start'  # start or end
 
 
@@ -143,6 +143,11 @@ def _money(value) -> Decimal:
     return (value or ZERO).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
+def _place(session) -> str:
+    """Table name, or the take-away label (Take away #012 - Budi)."""
+    return session.label
+
+
 def _completed_payments(period: Period):
     start_dt, end_dt = period.bounds()
     return Payment.objects.filter(status=PaymentStatus.COMPLETED, paid_at__gte=start_dt, paid_at__lt=end_dt)
@@ -198,6 +203,7 @@ def menu_sales_report(period: Period, user=None) -> ReportData:
             order__created_at__gte=start_dt,
             order__created_at__lt=end_dt,
         )
+        .exclude(status='UNAVAILABLE')
         .values('menu_item__category__name', 'menu_name_snapshot')
         .annotate(qty=Sum('quantity'), revenue=Sum('subtotal'))
     )
@@ -230,15 +236,19 @@ def menu_sales_report(period: Period, user=None) -> ReportData:
     )
 
 
-def payment_methods_report(period: Period, user=None) -> ReportData:
+ORDER_TYPES = ('DINE_IN', 'TAKEAWAY')
+
+
+def order_types_report(period: Period, user=None) -> ReportData:
+    """Sales split by order type: dine-in (a real table) and take away (the hidden virtual table)."""
     grouped = {
-        g['method']: g
-        for g in _completed_payments(period).values('method').annotate(n=Count('id'), total=Sum('amount'))
+        g['table_session__table__is_takeaway']: g
+        for g in _completed_payments(period).values('table_session__table__is_takeaway').annotate(n=Count('id'), total=Sum('amount'))
     }
     entries = []
-    for method in PaymentMethod.values:
-        g = grouped.get(method)
-        entries.append([method, g['n'] if g else 0, _money(g['total']) if g else ZERO])
+    for kind in ORDER_TYPES:
+        g = grouped.get(kind == 'TAKEAWAY')
+        entries.append([kind, g['n'] if g else 0, _money(g['total']) if g else ZERO])
 
     grand_total = sum((e[2] for e in entries), ZERO)
     percents = [Decimal('0.0')] * len(entries)
@@ -249,15 +259,15 @@ def payment_methods_report(period: Period, user=None) -> ReportData:
         if remainder:
             percents[max(range(len(entries)), key=lambda i: entries[i][2])] += remainder
 
-    rows = [[Label(f'rpt_method_{e[0]}'), e[1], e[2], percents[i]] for i, e in enumerate(entries)]
-    drills = [{'kind': 'transactions', 'method': e[0], 'status': PaymentStatus.COMPLETED} for e in entries]
+    rows = [[Label(f'rpt_ot_{e[0]}'), e[1], e[2], percents[i]] for i, e in enumerate(entries)]
+    drills = [{'kind': 'transactions', 'order_type': e[0], 'status': PaymentStatus.COMPLETED} for e in entries]
     return ReportData(
-        report_type='payment_methods',
+        report_type='order_types',
         drills=drills,
-        title_key='rpt_type_payment_methods',
+        title_key='rpt_type_order_types',
         period=period,
         columns=[
-            Column('rpt_col_method'),
+            Column('rpt_col_order_type'),
             Column('rpt_col_transactions', 'int', 'end'),
             Column('rpt_col_amount', 'money', 'end'),
             Column('rpt_col_percent', 'percent', 'end'),
@@ -335,12 +345,37 @@ def exceptions_report(period: Period, user=None) -> ReportData:
         status=PaymentStatus.VOIDED, updated_at__gte=start_dt, updated_at__lt=end_dt
     ).select_related('table_session__table', 'voided_by', 'received_by')
 
+    unavailable = OrderItem.objects.filter(
+        status='UNAVAILABLE', status_changed_at__gte=start_dt, status_changed_at__lt=end_dt,
+    ).select_related('order__table_session__table', 'status_changed_by')
+
+    walkouts = walkout_sessions(period).select_related('table', 'closed_by').prefetch_related('orders')
+
     if scoped:
         history = history.filter(actor_user=user)
         voided = voided.filter(Q(voided_by=user) | Q(received_by=user))
+        unavailable = unavailable.filter(Q(status_changed_by=user) | Q(order__confirmed_by=user) | Q(order__created_by=user))
+        walkouts = walkouts.filter(closed_by=user)
 
     entries = []  # (sort time, row)
-    counts = {'rejected': 0, 'cancelled': 0, 'voided': 0}
+    counts = {'rejected': 0, 'cancelled': 0, 'voided': 0, 'unavailable': 0, 'walkout': 0}
+    walkout_total = ZERO
+    for s in walkouts:
+        counts['walkout'] += 1
+        walkout_total += _money(s.unpaid_amount)
+        codes = sorted(o.order_code for o in s.orders.all())
+        entries.append((s.closed_at, [
+            s.closed_at, Label('rpt_kind_walkout'), codes[0] if codes else '-',
+            _place(s), _money(s.unpaid_amount), s.close_reason or '', _user_name(s.closed_by),
+        ]))
+    for line in unavailable:
+        counts['unavailable'] += 1
+        entries.append((line.status_changed_at, [
+            line.status_changed_at, Label('rpt_kind_unavailable'), line.order.order_code,
+            _place(line.order.table_session), _money(line.subtotal),
+            f"{line.quantity}x {line.menu_name_snapshot}" + (f": {line.unavailable_reason}" if line.unavailable_reason else ''),
+            _user_name(line.status_changed_by),
+        ]))
     for h in history:
         kind = 'rejected' if h.to_status == OrderStatus.REJECTED else 'cancelled'
         counts[kind] += 1
@@ -348,13 +383,13 @@ def exceptions_report(period: Period, user=None) -> ReportData:
         reason = h.reason or (order.rejection_reason if kind == 'rejected' else order.cancellation_reason) or ''
         entries.append((h.created_at, [
             h.created_at, Label(f'rpt_kind_{kind}'), order.order_code,
-            order.table_session.table.display_name, _money(order.grand_total), reason, _user_name(h.actor_user),
+            _place(order.table_session), _money(order.grand_total), reason, _user_name(h.actor_user),
         ]))
     for p in voided:
         counts['voided'] += 1
         entries.append((p.updated_at, [
             p.updated_at, Label('rpt_kind_voided'), p.payment_code,
-            p.table_session.table.display_name, _money(p.amount), p.void_reason or '',
+            _place(p.table_session), _money(p.amount), p.void_reason or '',
             _user_name(p.voided_by or p.received_by),
         ]))
 
@@ -383,9 +418,18 @@ def exceptions_report(period: Period, user=None) -> ReportData:
             SummaryItem('rpt_sum_rejected', counts['rejected'], 'int'),
             SummaryItem('rpt_sum_cancelled', counts['cancelled'], 'int'),
             SummaryItem('rpt_sum_voided', counts['voided'], 'int'),
+            SummaryItem('rpt_sum_unavailable', counts['unavailable'], 'int'),
+            SummaryItem('rpt_sum_walkout', counts['walkout'], 'int'),
+            SummaryItem('rpt_sum_walkout_amount', walkout_total, 'money'),
         ],
         scoped_to_user=scoped,
     )
+
+
+def walkout_sessions(period: Period):
+    """Table sessions closed in the period because the guests left without paying."""
+    start_dt, end_dt = period.bounds()
+    return TableSession.objects.filter(close_kind='WALKOUT', closed_at__gte=start_dt, closed_at__lt=end_dt)
 
 
 def table_usage_report(period: Period, user=None) -> ReportData:
@@ -393,7 +437,7 @@ def table_usage_report(period: Period, user=None) -> ReportData:
     sessions = (
         TableSession.objects.filter(opened_at__gte=start_dt, opened_at__lt=end_dt)
         .exclude(status=SessionStatus.CANCELLED)
-        .values('table_id', 'table__display_name', 'table__sort_order', 'table__table_code')
+        .values('table_id', 'table__display_name', 'table__sort_order', 'table__table_code', 'table__is_takeaway')
         .annotate(n=Count('id'), guests=Sum('guest_count'))
     )
     sales = (
@@ -406,7 +450,8 @@ def table_usage_report(period: Period, user=None) -> ReportData:
     tables: Dict[Any, Dict[str, Any]] = {}
     for s in sessions:
         tables[s['table_id']] = {
-            'name': s['table__display_name'], 'order': (s['table__sort_order'], s['table__table_code']),
+            'name': Label('rpt_ot_TAKEAWAY') if s['table__is_takeaway'] else s['table__display_name'],
+            'order': (s['table__sort_order'], s['table__table_code']),
             'n': s['n'], 'guests': s['guests'] or 0, 'total': ZERO,
         }
     for s in sales:
@@ -421,7 +466,8 @@ def table_usage_report(period: Period, user=None) -> ReportData:
     entries = sorted(tables.values(), key=lambda t: t['order'])
     return ReportData(
         report_type='table_usage',
-        drills=[{'kind': 'orders', 'q': t['name']} for t in entries],
+        drills=[{'kind': 'orders', 'order_type': 'TAKEAWAY'} if isinstance(t['name'], Label) else {'kind': 'orders', 'q': t['name']}
+                for t in entries],
         title_key='rpt_type_table_usage',
         period=period,
         columns=[
@@ -439,13 +485,126 @@ def table_usage_report(period: Period, user=None) -> ReportData:
     )
 
 
+def shifts_report(period: Period, user=None) -> ReportData:
+    """Cashier shifts opened in the period: opening cash, cash sales, expected, counted and difference.
+    Cashiers only see their own shifts."""
+    from apps.shifts.models import Shift, ShiftStatus
+    from apps.shifts.services import shift_figures
+    scoped = user is not None and is_scoped_user(user)
+    start_dt, end_dt = period.bounds()
+    shifts = Shift.objects.filter(opened_at__gte=start_dt, opened_at__lt=end_dt).select_related('cashier').order_by('-opened_at')
+    if scoped:
+        shifts = shifts.filter(cashier=user)
+    rows, drills = [], []
+    total_diff = ZERO
+    for s in shifts:
+        live = s.status == ShiftStatus.OPEN
+        figures = shift_figures(s) if live else {'cash_sales': s.cash_sales, 'expected_cash': s.expected_cash}
+        diff = None if live else _money(s.difference)
+        if diff is not None:
+            total_diff += diff
+        rows.append([
+            s.opened_at, s.closed_at if s.closed_at else Label('rpt_shift_open'), _user_name(s.cashier),
+            _money(s.opening_cash), _money(figures['cash_sales']), _money(figures['expected_cash']),
+            _money(s.counted_cash) if s.counted_cash is not None else '-',
+            diff if diff is not None else '-', s.closing_note or '',
+        ])
+        drills.append({'kind': 'transactions', 'cashier': str(s.cashier_id)})
+    return ReportData(
+        report_type='shifts',
+        drills=drills,
+        title_key='rpt_type_shifts',
+        period=period,
+        columns=[
+            Column('rpt_col_opened', 'datetime'),
+            Column('rpt_col_closed', 'datetime'),
+            Column('rpt_col_cashier'),
+            Column('rpt_col_opening_cash', 'money', 'end'),
+            Column('rpt_col_cash_sales', 'money', 'end'),
+            Column('rpt_col_expected_cash', 'money', 'end'),
+            Column('rpt_col_counted_cash', 'money', 'end'),
+            Column('rpt_col_difference', 'money', 'end'),
+            Column('rpt_col_note'),
+        ],
+        rows=rows,
+        summary=[
+            SummaryItem('rpt_sum_shifts', len(rows), 'int'),
+            SummaryItem('rpt_sum_difference', total_diff, 'money'),
+        ],
+        scoped_to_user=scoped,
+    )
+
+
+def dine_in_sessions(period: Period):
+    """Dine-in table sessions opened in the period (cancelled openings and take away are not visits).
+    Shared with the Overview so the visitor numbers agree everywhere."""
+    start_dt, end_dt = period.bounds()
+    return (TableSession.objects.filter(opened_at__gte=start_dt, opened_at__lt=end_dt, table__is_takeaway=False)
+            .exclude(status=SessionStatus.CANCELLED))
+
+
+def takeaway_orders(period: Period):
+    """Take-away orders placed in the period that were accepted (CONFIRMED..COMPLETED)."""
+    from apps.ordering.models import Order
+    start_dt, end_dt = period.bounds()
+    return Order.objects.filter(created_at__gte=start_dt, created_at__lt=end_dt, status__in=SOLD_STATUSES,
+                                table_session__table__is_takeaway=True)
+
+
+def visitors_report(period: Period, user=None) -> ReportData:
+    """Per day: dine-in sessions, guests, average guests per session and take-away orders."""
+    visits = {
+        r['day']: r for r in dine_in_sessions(period).annotate(day=TruncDate('opened_at'))
+        .values('day').annotate(n=Count('id'), guests=Sum('guest_count'))
+    }
+    takeaway = {
+        r['day']: r['n'] for r in takeaway_orders(period).annotate(day=TruncDate('created_at'))
+        .values('day').annotate(n=Count('id'))
+    }
+    rows, drills = [], []
+    total_sessions = total_guests = total_takeaway = 0
+    for day in sorted(set(visits) | set(takeaway)):
+        v = visits.get(day) or {}
+        n, guests, ta = v.get('n', 0), int(v.get('guests') or 0), takeaway.get(day, 0)
+        total_sessions += n
+        total_guests += guests
+        total_takeaway += ta
+        avg = (Decimal(guests) / n).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP) if n else Decimal('0.0')
+        rows.append([day, n, guests, avg, ta])
+        drills.append({'kind': 'orders', 'start': day.isoformat(), 'end': day.isoformat()})
+    overall_avg = (Decimal(total_guests) / total_sessions).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP) \
+        if total_sessions else Decimal('0.0')
+    return ReportData(
+        report_type='visitors',
+        drills=drills,
+        title_key='rpt_type_visitors',
+        period=period,
+        columns=[
+            Column('rpt_col_date', 'date'),
+            Column('rpt_col_sessions', 'int', 'end'),
+            Column('rpt_col_guests', 'int', 'end'),
+            Column('rpt_col_avg_guests', 'decimal', 'end'),
+            Column('rpt_col_takeaway_orders', 'int', 'end'),
+        ],
+        rows=rows,
+        summary=[
+            SummaryItem('rpt_sum_guests', total_guests, 'int'),
+            SummaryItem('rpt_sum_sessions', total_sessions, 'int'),
+            SummaryItem('rpt_sum_avg_guests', overall_avg, 'decimal'),
+            SummaryItem('rpt_sum_takeaway_orders', total_takeaway, 'int'),
+        ],
+    )
+
+
 REPORT_BUILDERS: Dict[str, Callable[..., ReportData]] = {
     'daily_sales': daily_sales_report,
     'menu_sales': menu_sales_report,
-    'payment_methods': payment_methods_report,
+    'order_types': order_types_report,
     'cashiers': cashiers_report,
     'exceptions': exceptions_report,
     'table_usage': table_usage_report,
+    'shifts': shifts_report,
+    'visitors': visitors_report,
 }
 REPORT_TYPES = tuple(REPORT_BUILDERS)
 
