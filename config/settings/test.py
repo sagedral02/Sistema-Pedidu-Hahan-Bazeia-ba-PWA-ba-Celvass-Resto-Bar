@@ -1,12 +1,17 @@
+import tempfile
+
 from .base import *
 
 DEBUG = False
 TESTING = True
 
+# A file-backed test database, not ':memory:': with an in-memory SQLite the browser tests' live server shares one
+# connection across its request threads, so parallel portal requests could read an empty session and log out.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',
+        'TEST': {'NAME': os.path.join(tempfile.gettempdir(), 'celvas_test.sqlite3')},
     }
 }
 

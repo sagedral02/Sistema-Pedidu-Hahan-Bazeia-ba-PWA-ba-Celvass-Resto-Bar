@@ -44,6 +44,9 @@ def overview_data(transactional_db, restaurant, active_session, session_two, cas
     rejected.rejection_reason = 'Stok habis'
     rejected.save()
     make_payment(restaurant, active_session, cashier_user, '20.00', paid_day=today, hour=12)
+    # The second table is a take away counter, so the order-type donut gets both slices ($20 dine-in, $30 take away)
+    session_two.table.is_takeaway = True
+    session_two.table.save(update_fields=['is_takeaway'])
     make_payment(restaurant, session_two, cashier_two, '30.00', paid_day=today, hour=13,
                  method=PaymentMethod.MANUAL_OTHER)
     make_payment(restaurant, active_session, cashier_user, '10.00', paid_day=today - timedelta(days=2), hour=12)
@@ -201,7 +204,7 @@ def test_donut_legend_hides_a_slice_and_updates_the_total(page, live_server, ui_
     assert page.locator('#ov-methods .chart-slice').count() == 2
     assert page.locator('#ov-methods .chart-center-value').text_content() == '$50.00'
 
-    page.locator('#ov-methods .chart-legend-item').first.click()  # hide Cash
+    page.locator('#ov-methods .chart-legend-item').first.click()  # hide Dine-in
     assert page.locator('#ov-methods .chart-slice').count() == 1
     assert page.locator('#ov-methods .chart-center-value').text_content() == '$30.00'
     assert page.locator('#ov-methods .chart-legend-item').first.get_attribute('aria-pressed') == 'false'
@@ -238,14 +241,14 @@ def test_clicking_the_trend_opens_that_days_transactions(page, live_server, ui_a
     assert page.locator('#rpt-h-status').input_value() == 'COMPLETED'
 
 
-def test_clicking_a_payment_method_filters_transactions(page, live_server, ui_admin, overview_data):
+def test_clicking_an_order_type_filters_transactions(page, live_server, ui_admin, overview_data):
     _login(page, live_server, ui_admin)
     _open(page, live_server)
     page.wait_for_function("() => !document.querySelector('#ov-methods .chart-pop') || getComputedStyle(document.querySelector('#ov-methods .chart-pop')).opacity === '1'")
-    _click_ring(page, 'ov-methods', 0.2)  # the Cash slice covers the first 40%
+    _click_ring(page, 'ov-methods', 0.2)  # the Dine-in slice covers the first 40%
     page.wait_for_url('**/reports/#history/transactions**')
     page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 1")
-    assert page.locator('#rpt-h-method').input_value() == 'CASH'
+    assert page.locator('#rpt-h-type').input_value() == 'DINE_IN'
     assert '$20.00' in page.locator('#rpt-h-body').inner_text()
 
 
@@ -293,14 +296,14 @@ def test_language_change_retranslates_cards_charts_and_legends(page, live_server
     page.evaluate("() => setLanguage('id')")
     page.wait_for_function("() => document.querySelector('#ov-kpis [data-kpi=\"sales\"] .kpi-label').textContent === 'Penjualan'")
     page.wait_for_function("() => document.querySelector('#ov-trend .chart-legend-item').textContent.includes('Periode ini')")
-    assert 'Tunai' in page.locator('#ov-methods').inner_text()
+    assert 'Makan di tempat' in page.locator('#ov-methods').inner_text()
     assert 'Menunggu kasir' in page.locator('#ov-statuses').inner_text()
     assert page.locator('#ov-trend svg').get_attribute('aria-label').startswith('Tren penjualan')
     assert 'Penjualan per kategori' in page.locator('#overview-panel').inner_text()
 
     page.evaluate("() => setLanguage('pt')")
     page.wait_for_function("() => document.querySelector('#ov-trend .chart-legend-item').textContent.includes('Período atual')")
-    assert 'Dinheiro' in page.locator('#ov-methods').inner_text()
+    assert 'Consumo no local' in page.locator('#ov-methods').inner_text()
 
 
 def test_charts_respect_reduced_motion(browser, live_server, ui_admin, overview_data):
@@ -438,5 +441,5 @@ def test_chart_ships_a_hidden_data_table_for_screen_readers(page, live_server, u
     table = page.locator('#ov-methods .visually-hidden table')
     assert table.count() == 1
     text = table.inner_text()
-    assert 'Cash' in text and '$20.00' in text and 'Card / Transfer' in text
+    assert 'Dine-in' in text and '$20.00' in text and 'Take away' in text and '$30.00' in text
     assert page.locator('#ov-hours .visually-hidden table tbody tr').count() == 24

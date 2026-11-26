@@ -64,9 +64,9 @@ def test_selecting_another_report_and_period_updates_the_table(page, live_server
     _login(page, live_server, ui_admin)
     _open_reports(page, live_server)
 
-    page.select_option('#rpt-type', 'payment_methods')
-    page.wait_for_function("() => document.querySelector('#rpt-head th')?.textContent === 'Method'")
-    assert 'Cash' in page.locator('#rpt-body').inner_text()
+    page.select_option('#rpt-type', 'order_types')
+    page.wait_for_function("() => document.querySelector('#rpt-head th')?.textContent === 'Order type'")
+    assert 'Dine-in' in page.locator('#rpt-body').inner_text()
 
     page.locator('[data-preset="custom"]').click()
     assert page.locator('#rpt-custom').is_visible()
@@ -208,7 +208,9 @@ def test_history_switches_to_transactions_and_back(page, live_server, ui_admin, 
     page.select_option('#rpt-h-type', 'DINE_IN')
     page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 2")
 
+    # Switching list resets the filters; both lists show 2 rows, so wait for the reset itself
     page.locator('[data-kind="orders"]').click()
+    page.wait_for_function("() => document.getElementById('rpt-h-type').value === ''")
     page.wait_for_function("() => document.querySelectorAll('#rpt-h-body tr[data-id]').length === 2")
     assert page.locator('#rpt-h-type').input_value() == ''
 

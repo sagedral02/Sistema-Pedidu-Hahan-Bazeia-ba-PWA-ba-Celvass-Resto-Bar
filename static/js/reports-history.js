@@ -430,7 +430,7 @@
       setKind(kind);
       if (kindChanged || query.toString()) resetFilters();
 
-      ['status', 'source', 'method', 'cashier'].forEach((key) => {
+      ['status', 'source', 'order_type', 'cashier'].forEach((key) => {
         const value = query.get(key);
         if (value && ui[key]) ui[key].value = value;
       });

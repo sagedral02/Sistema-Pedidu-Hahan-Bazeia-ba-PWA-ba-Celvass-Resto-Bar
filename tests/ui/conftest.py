@@ -76,6 +76,13 @@ def _proactor_event_loop_on_windows():
     yield
 
 
+@pytest.fixture(scope='session', autouse=True)
+def _test_db_before_live_server(django_db_setup):
+    """Create the file-backed test database before ``live_server`` starts. Otherwise the server is built while the
+    DB name is still ':memory:' and every request thread shares one SQLite connection, which drops sessions."""
+    yield
+
+
 @pytest.fixture(scope='session')
 def browser_context_args(browser_context_args):
     return {

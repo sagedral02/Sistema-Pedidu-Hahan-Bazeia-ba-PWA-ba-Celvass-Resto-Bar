@@ -83,6 +83,14 @@ def cancel_staff_modal(page):
 
 
 def assert_no_leftovers(page):
+    # Bootstrap removes the backdrop only after its own fade, which ends after the modal stops transitioning.
+    try:
+        page.wait_for_function(
+            "() => !document.querySelector('.modal-backdrop') && !document.body.classList.contains('modal-open')",
+            timeout=3000,
+        )
+    except Exception:
+        pass  # fall through to the assertion so the failure shows the full state
     state = read_modal_state(page)
     assert state['backdropCount'] == 0, state
     assert 'modal-open' not in state['bodyClasses'], state
