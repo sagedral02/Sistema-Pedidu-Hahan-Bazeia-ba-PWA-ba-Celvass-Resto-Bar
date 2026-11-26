@@ -159,7 +159,9 @@
   }
 
   function makeTable(container, caption, headers, rows) {
-    const table = htmlEl('table', 'visually-hidden');
+    // A <table> ignores the 1px width of .visually-hidden, so hide a wrapper instead
+    const wrap = htmlEl('div', 'visually-hidden');
+    const table = htmlEl('table');
     table.append(htmlEl('caption', '', caption));
     const head = htmlEl('tr');
     headers.forEach((h) => {
@@ -180,7 +182,8 @@
       tbody.append(tr);
     });
     table.append(thead, tbody);
-    container.append(table);
+    wrap.append(table);
+    container.append(wrap);
   }
 
   function emptyState(container, text) {
